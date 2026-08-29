@@ -1,0 +1,649 @@
+// Leapin — data model
+//
+// Translated from section 5 of docs/وثيقة العمارة التقنية - منصة تراخيص وتأسيس الشركات.md
+// (21 tables from the spec + Auth.js adapter models). Table/column names are
+// snake_case-mapped via @@map/@map to match the source document exactly; Prisma
+// field names use idiomatic camelCase.
+//
+// Deliberate deviations from the doc, and why, are called out inline as comments
+// next to the field/model they affect — see also the implementation plan.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────────────────────────────────
+
+enum TrackStatus {
+  active
+  deferred
+}
+
+enum ActivityCategoryStatus {
+  active
+  tbd
+}
+
+enum CountryStatus {
+  active
+  inactive
+}
+
+enum StageTrackScope {
+  regular_only
+  entrepreneurship_only
+  shared
+}
+
+enum StageActor {
+  client
+  team
+  system
+}
+
+enum StageStatus {
+  active
+  deferred
+  tbd
+}
+
+enum StagePricingType {
+  fixed
+  variable_by_country
+  variable_by_category
+  bundled_only
+}
+
+enum DiscountType {
+  none
+  percentage
+  fixed_amount
+}
+
+enum PaymentPlanOwnerType {
+  package
+  order
+}
+
+enum InstallmentTriggerType {
+  on_registration
+  on_stage_complete
+  fixed_date
+  manual
+}
+
+enum UserRole {
+  client
+  admin
+  super_admin
+}
+
+enum ResidencyStatus {
+  resident
+  non_resident
+}
+
+enum OrderStatus {
+  draft
+  pending_payment
+  in_progress
+  completed
+  cancelled
+  on_hold
+}
+
+enum OrderStageStatus {
+  not_started
+  in_progress
+  waiting_on_client
+  waiting_on_government
+  blocked
+  completed
+  skipped
+}
+
+enum PaymentStatus {
+  pending
+  paid
+  failed
+  refunded
+}
+
+enum TradeNameStatus {
+  submitted
+  approved
+  rejected
+  under_review
+}
+
+enum ForeignSetupStatus {
+  documents_pending
+  submitted
+  in_progress
+  completed
+}
+
+enum DocumentType {
+  misa_license
+  commercial_register
+  incorporation_contract
+  foreign_company_docs
+  financial_statements
+  other
+}
+
+enum GovernmentPlatform {
+  zatca
+  gosi
+  absher_nafath
+  other
+}
+
+enum OtpStatus {
+  sent
+  replied
+  expired
+}
+
+// PLACEHOLDER — the source doc (section 5.2) does not spell out value sets for
+// poa_status / idea_study_status / letter_status / non_objection_letters.status.
+// Kept as one shared minimal enum rather than inventing four distinct business
+// meanings. Split into real per-field enums once those lifecycles are confirmed.
+enum PlaceholderStatus {
+  pending
+  in_progress
+  completed
+  rejected
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// 5.1 REFERENCE / CONFIG TABLES — super-admin "journey & pricing builder"
+// ─────────────────────────────────────────────────────────────────────────
+
+model Track {
+  id          String      @id @default(uuid()) @db.Uuid
+  code        String      @unique @db.VarChar(64) // regular_investment / entrepreneurship / regional_hq
+  nameAr      String      @map("name_ar")
+  description String?
+  status      TrackStatus @default(active)
+  sortOrder   Int         @map("sort_order")
+
+  activityCategories ActivityCategory[]
+  packages           Package[]
+  orders             Order[]
+
+  @@map("tracks")
+}
+
+model ActivityCategory {
+  id                        String                 @id @default(uuid()) @db.Uuid
+  trackId                   String                 @map("track_id") @db.Uuid
+  track                     Track                  @relation(fields: [trackId], references: [id])
+  code                      String                 @db.VarChar(64) // service / commercial / professional
+  nameAr                    String                 @map("name_ar")
+  minForeignCompanies       Int?                   @map("min_foreign_companies")
+  minCapitalSar             Decimal?               @map("min_capital_sar") @db.Decimal(14, 2)
+  allowedInEntrepreneurship Boolean                @map("allowed_in_entrepreneurship")
+  status                    ActivityCategoryStatus @default(active)
+
+  activities        Activity[]
+  orders            Order[]
+  mixingRulesAsBase ActivityMixingRule[] @relation("MixingRuleBase")
+  mixingRulesAsAdd  ActivityMixingRule[] @relation("MixingRuleAddable")
+
+  @@unique([trackId, code])
+  @@map("activity_categories")
+}
+
+model ActivityMixingRule {
+  id                String           @id @default(uuid()) @db.Uuid
+  baseCategoryId    String           @map("base_category_id") @db.Uuid
+  baseCategory      ActivityCategory @relation("MixingRuleBase", fields: [baseCategoryId], references: [id])
+  addableCategoryId String           @map("addable_category_id") @db.Uuid
+  addableCategory   ActivityCategory @relation("MixingRuleAddable", fields: [addableCategoryId], references: [id])
+  isAllowed         Boolean          @map("is_allowed")
+
+  @@unique([baseCategoryId, addableCategoryId])
+  @@map("activity_mixing_rules")
+}
+
+model Country {
+  id                String        @id @default(uuid()) @db.Uuid
+  nameAr            String        @map("name_ar")
+  nameEn            String        @map("name_en")
+  basePrice         Decimal       @map("base_price") @db.Decimal(12, 2)
+  durationMinDays   Int           @map("duration_min_days")
+  durationMaxDays   Int           @map("duration_max_days")
+  requiredDocuments Json          @map("required_documents")
+  poaRequired       Boolean       @map("poa_required")
+  status            CountryStatus @default(active)
+
+  nationalityRestrictions     CountryNationalityRestriction[]
+  foreignCompanySetupRequests ForeignCompanySetupRequest[]
+
+  @@map("countries")
+}
+
+model CountryNationalityRestriction {
+  id              String  @id @default(uuid()) @db.Uuid
+  countryId       String  @map("country_id") @db.Uuid
+  country         Country @relation(fields: [countryId], references: [id])
+  nationalityCode String  @map("nationality_code") @db.VarChar(3) // ISO 3166-1 alpha-3
+  isEligible      Boolean @map("is_eligible")
+
+  @@unique([countryId, nationalityCode])
+  @@map("country_nationality_restrictions")
+}
+
+model Activity {
+  id               String           @id @default(uuid()) @db.Uuid
+  categoryId       String           @map("category_id") @db.Uuid
+  category         ActivityCategory @relation(fields: [categoryId], references: [id])
+  misaActivityCode String           @map("misa_activity_code")
+  nameAr           String           @map("name_ar")
+  nameEn           String           @map("name_en")
+  isActive         Boolean          @default(true) @map("is_active")
+  lastSyncedAt     DateTime?        @map("last_synced_at")
+  syncedByAdminId  String?          @map("synced_by_admin_id") @db.Uuid
+  syncedByAdmin    User?            @relation("ActivitiesSyncedByAdmin", fields: [syncedByAdminId], references: [id])
+
+  @@index([categoryId])
+  @@map("activities")
+}
+
+model Stage {
+  id                     String          @id @default(uuid()) @db.Uuid
+  code                   String          @unique @db.VarChar(32) // STAGE_0, STAGE_1A, STAGE_1B, STAGE_2 ...
+  trackScope             StageTrackScope @map("track_scope")
+  nameAr                 String          @map("name_ar")
+  description            String?
+  sequenceOrder          Int             @map("sequence_order")
+  parentStageId          String?         @map("parent_stage_id") @db.Uuid
+  parentStage            Stage?          @relation("StageHierarchy", fields: [parentStageId], references: [id])
+  childStages            Stage[]         @relation("StageHierarchy")
+  primaryActor           StageActor      @map("primary_actor")
+  requiresClientPresence Boolean         @default(false) @map("requires_client_presence") // true only for the bank-account stage
+  status                 StageStatus     @default(active)
+
+  stagePricing               StagePricing[]
+  packageStages              PackageStage[]
+  ordersAsStartStage         Order[]              @relation("OrderJourneyStart")
+  ordersAsEndStage           Order[]              @relation("OrderJourneyEnd")
+  orderStages                OrderStage[]
+  paymentInstallmentTriggers PaymentInstallment[]
+
+  @@index([trackScope])
+  @@map("stages")
+}
+
+model StagePricing {
+  id          String           @id @default(uuid()) @db.Uuid
+  stageId     String           @map("stage_id") @db.Uuid
+  stage       Stage            @relation(fields: [stageId], references: [id])
+  pricingType StagePricingType @map("pricing_type")
+  basePrice   Decimal?         @map("base_price") @db.Decimal(12, 2)
+  currency    String           @default("SAR") @db.Char(3)
+  notes       String?
+
+  @@index([stageId])
+  @@map("stage_pricing")
+}
+
+model Package {
+  id                 String       @id @default(uuid()) @db.Uuid
+  code               String       @db.VarChar(64) // uniqueness not specified in source doc — left non-unique
+  nameAr             String       @map("name_ar")
+  trackId            String?      @map("track_id") @db.Uuid
+  track              Track?       @relation(fields: [trackId], references: [id])
+  description        String?
+  totalPriceOverride Decimal?     @map("total_price_override") @db.Decimal(12, 2)
+  discountType       DiscountType @default(none) @map("discount_type")
+  discountValue      Decimal?     @map("discount_value") @db.Decimal(12, 2)
+  isActive           Boolean      @default(true) @map("is_active")
+  createdByUserId    String       @map("created_by_user_id") @db.Uuid
+  createdByUser      User         @relation("PackagesCreatedByUser", fields: [createdByUserId], references: [id])
+
+  packageStages PackageStage[]
+  orders        Order[]
+
+  @@index([trackId])
+  @@map("packages")
+}
+
+model PackageStage {
+  id              String  @id @default(uuid()) @db.Uuid
+  packageId       String  @map("package_id") @db.Uuid
+  package         Package @relation(fields: [packageId], references: [id])
+  stageId         String  @map("stage_id") @db.Uuid
+  stage           Stage   @relation(fields: [stageId], references: [id])
+  isOptionalAddon Boolean @default(false) @map("is_optional_addon")
+
+  @@unique([packageId, stageId])
+  @@map("package_stages")
+}
+
+// owner_id is polymorphic (points to packages.id or orders.id depending on
+// owner_type). Prisma can't express a conditional FK, so this stays a plain
+// indexed UUID column with NO relation — referential integrity for it is an
+// application-layer concern.
+model PaymentPlan {
+  id                 String               @id @default(uuid()) @db.Uuid
+  ownerType          PaymentPlanOwnerType @map("owner_type")
+  ownerId            String               @map("owner_id") @db.Uuid
+  code               String               @db.VarChar(64)
+  installmentsCount  Int                  @map("installments_count") // expected 2-4, enforced at the application layer
+  isDefault          Boolean              @default(false) @map("is_default")
+  isClientSelectable Boolean              @default(true) @map("is_client_selectable")
+
+  installments  PaymentInstallment[]
+  orders        Order[]
+  orderPayments OrderPayment[]
+
+  @@index([ownerType, ownerId])
+  @@map("payment_plans")
+}
+
+model PaymentInstallment {
+  id                String                 @id @default(uuid()) @db.Uuid
+  paymentPlanId     String                 @map("payment_plan_id") @db.Uuid
+  paymentPlan       PaymentPlan            @relation(fields: [paymentPlanId], references: [id])
+  installmentNumber Int                    @map("installment_number")
+  percentage        Decimal                @db.Decimal(5, 2)
+  triggerType       InstallmentTriggerType @map("trigger_type")
+  triggerStageId    String?                @map("trigger_stage_id") @db.Uuid
+  triggerStage      Stage?                 @relation(fields: [triggerStageId], references: [id])
+  fixedDueDate      DateTime?              @map("fixed_due_date") @db.Date
+
+  @@index([paymentPlanId])
+  @@map("payment_installments")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// USERS + AUTH.JS ADAPTER MODELS
+// ─────────────────────────────────────────────────────────────────────────
+
+model User {
+  id                String           @id @default(uuid()) @db.Uuid
+  role              UserRole         @default(client)
+  // "name" is the field name Auth.js's Prisma adapter expects on the User
+  // model; mapped to the doc's full_name column so the DB schema still
+  // matches section 5.2 exactly.
+  name              String           @map("full_name")
+  email             String           @unique // doc lists this as plain VARCHAR; unique is required for auth lookup
+  emailVerified     DateTime?        @map("email_verified") // required by the Auth.js adapter — not in source doc
+  image             String?          @map("image_url") // required by the Auth.js adapter type shape — not in source doc
+  passwordHash      String?          @map("password_hash") // for credentials-based login; null if OAuth-only
+  phone             String?
+  nationality       String?
+  residencyStatus   ResidencyStatus? @map("residency_status")
+  nationalIdOrIqama String?          @map("national_id_or_iqama")
+  isActive          Boolean          @default(true) @map("is_active")
+  createdAt         DateTime         @default(now()) @map("created_at")
+
+  accounts Account[]
+  sessions Session[]
+
+  ordersAsClient       Order[]         @relation("OrderClient")
+  orderStagesAssigned  OrderStage[]    @relation("OrderStageAssignedAdmin")
+  documentsUploaded    DocumentVault[] @relation("DocumentsUploadedByAdmin")
+  otpRequestsRequested OtpRequest[]    @relation("OtpRequestedByAdmin")
+  activitiesSynced     Activity[]      @relation("ActivitiesSyncedByAdmin")
+  packagesCreated      Package[]       @relation("PackagesCreatedByUser")
+  auditLogsAsActor     AuditLog[]      @relation("AuditLogActor")
+
+  @@map("users")
+}
+
+// Auth.js Prisma adapter models — required alongside `users`, not part of the
+// original 21-table count in the source doc.
+model Account {
+  id                String  @id @default(uuid()) @db.Uuid
+  userId            String  @map("user_id") @db.Uuid
+  type              String
+  provider          String
+  providerAccountId String  @map("provider_account_id")
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}
+
+model Session {
+  id           String   @id @default(uuid()) @db.Uuid
+  sessionToken String   @unique @map("session_token")
+  userId       String   @map("user_id") @db.Uuid
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sessions")
+}
+
+model VerificationToken {
+  identifier String
+  token      String
+  expires    DateTime
+
+  @@unique([identifier, token])
+  @@map("verification_tokens")
+}
+
+// Optional fine-grained permission layer over the 3 roles — future
+// extension per doc section 2.2, created now but not yet consumed anywhere.
+model RolePermission {
+  id        String   @id @default(uuid()) @db.Uuid
+  role      UserRole
+  resource  String
+  canView   Boolean  @default(false) @map("can_view")
+  canCreate Boolean  @default(false) @map("can_create")
+  canEdit   Boolean  @default(false) @map("can_edit")
+  canDelete Boolean  @default(false) @map("can_delete")
+
+  @@unique([role, resource])
+  @@map("role_permissions")
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// 5.2 OPERATIONAL TABLES — created/updated with each actual client order
+// ─────────────────────────────────────────────────────────────────────────
+
+model Order {
+  id                  String            @id @default(uuid()) @db.Uuid
+  clientId            String            @map("client_id") @db.Uuid
+  client              User              @relation("OrderClient", fields: [clientId], references: [id])
+  trackId             String            @map("track_id") @db.Uuid
+  track               Track             @relation(fields: [trackId], references: [id])
+  activityCategoryId  String?           @map("activity_category_id") @db.Uuid
+  activityCategory    ActivityCategory? @relation(fields: [activityCategoryId], references: [id])
+  selectedPackageId   String?           @map("selected_package_id") @db.Uuid
+  selectedPackage     Package?          @relation(fields: [selectedPackageId], references: [id])
+  journeyStartStageId String            @map("journey_start_stage_id") @db.Uuid
+  journeyStartStage   Stage             @relation("OrderJourneyStart", fields: [journeyStartStageId], references: [id])
+  journeyEndStageId   String            @map("journey_end_stage_id") @db.Uuid
+  journeyEndStage     Stage             @relation("OrderJourneyEnd", fields: [journeyEndStageId], references: [id])
+  paymentPlanId       String?           @map("payment_plan_id") @db.Uuid
+  paymentPlan         PaymentPlan?      @relation(fields: [paymentPlanId], references: [id])
+  status              OrderStatus       @default(draft)
+  totalPrice          Decimal?          @map("total_price") @db.Decimal(12, 2)
+  createdAt           DateTime          @default(now()) @map("created_at")
+  updatedAt           DateTime          @updatedAt @map("updated_at")
+
+  orderStages                 OrderStage[]
+  orderPayments               OrderPayment[]
+  tradeNames                  TradeName[]
+  foreignCompanySetupRequests ForeignCompanySetupRequest[]
+  documents                   DocumentVault[]
+  otpRequests                 OtpRequest[]
+  incubatorApprovals          IncubatorApproval[]
+  partnersDecisionForms       PartnersDecisionForm[]
+  nonObjectionLetters         NonObjectionLetter[]
+
+  @@index([clientId])
+  @@index([status])
+  @@index([trackId])
+  @@map("orders")
+}
+
+model OrderStage {
+  id              String           @id @default(uuid()) @db.Uuid
+  orderId         String           @map("order_id") @db.Uuid
+  order           Order            @relation(fields: [orderId], references: [id])
+  stageId         String           @map("stage_id") @db.Uuid
+  stage           Stage            @relation(fields: [stageId], references: [id])
+  status          OrderStageStatus @default(not_started)
+  assignedAdminId String?          @map("assigned_admin_id") @db.Uuid
+  assignedAdmin   User?            @relation("OrderStageAssignedAdmin", fields: [assignedAdminId], references: [id])
+  startedAt       DateTime?        @map("started_at")
+  completedAt     DateTime?        @map("completed_at")
+  internalNotes   String?          @map("internal_notes")
+
+  @@unique([orderId, stageId])
+  @@index([status])
+  @@map("order_stages")
+}
+
+model OrderPayment {
+  id                String        @id @default(uuid()) @db.Uuid
+  orderId           String        @map("order_id") @db.Uuid
+  order             Order         @relation(fields: [orderId], references: [id])
+  paymentPlanId     String        @map("payment_plan_id") @db.Uuid
+  paymentPlan       PaymentPlan   @relation(fields: [paymentPlanId], references: [id])
+  installmentNumber Int           @map("installment_number")
+  amount            Decimal       @db.Decimal(12, 2)
+  status            PaymentStatus @default(pending)
+  paidAt            DateTime?     @map("paid_at")
+  gatewayReference  String?       @map("gateway_reference")
+
+  @@index([orderId])
+  @@index([status])
+  @@map("order_payments")
+}
+
+model TradeName {
+  id           String          @id @default(uuid()) @db.Uuid
+  orderId      String          @map("order_id") @db.Uuid
+  order        Order           @relation(fields: [orderId], references: [id])
+  nameAr       String          @map("name_ar")
+  priorityRank Int             @map("priority_rank")
+  batchNumber  Int             @map("batch_number")
+  status       TradeNameStatus @default(submitted)
+  submittedAt  DateTime        @map("submitted_at")
+
+  @@index([orderId])
+  @@map("trade_names")
+}
+
+model ForeignCompanySetupRequest {
+  id        String             @id @default(uuid()) @db.Uuid
+  orderId   String             @map("order_id") @db.Uuid
+  order     Order              @relation(fields: [orderId], references: [id])
+  countryId String             @map("country_id") @db.Uuid
+  country   Country            @relation(fields: [countryId], references: [id])
+  status    ForeignSetupStatus @default(documents_pending)
+  poaStatus PlaceholderStatus? @map("poa_status") // PLACEHOLDER enum — see note above
+  createdAt DateTime           @default(now()) @map("created_at")
+
+  @@index([orderId])
+  @@map("foreign_company_setup_requests")
+}
+
+model DocumentVault {
+  id                String       @id @default(uuid()) @db.Uuid
+  orderId           String       @map("order_id") @db.Uuid
+  order             Order        @relation(fields: [orderId], references: [id])
+  documentType      DocumentType @map("document_type")
+  fileUrl           String       @map("file_url")
+  uploadedByAdminId String       @map("uploaded_by_admin_id") @db.Uuid
+  uploadedByAdmin   User         @relation("DocumentsUploadedByAdmin", fields: [uploadedByAdminId], references: [id])
+  isVisibleToClient Boolean      @default(false) @map("is_visible_to_client") // default not specified in doc — defaults hidden until an admin reveals it
+  uploadedAt        DateTime     @default(now()) @map("uploaded_at")
+
+  @@index([orderId])
+  @@map("documents_vault")
+}
+
+model OtpRequest {
+  id                 String             @id @default(uuid()) @db.Uuid
+  orderId            String             @map("order_id") @db.Uuid
+  order              Order              @relation(fields: [orderId], references: [id])
+  requestedByAdminId String             @map("requested_by_admin_id") @db.Uuid
+  requestedByAdmin   User               @relation("OtpRequestedByAdmin", fields: [requestedByAdminId], references: [id])
+  governmentPlatform GovernmentPlatform @map("government_platform")
+  metaTemplateName   String             @map("meta_template_name")
+  sentAt             DateTime           @map("sent_at")
+  clientReply        String?            @map("client_reply")
+  clientRepliedAt    DateTime?          @map("client_replied_at")
+  status             OtpStatus          @default(sent)
+
+  @@index([orderId])
+  @@map("otp_requests")
+}
+
+model IncubatorApproval {
+  id               String            @id @default(uuid()) @db.Uuid
+  orderId          String            @map("order_id") @db.Uuid
+  order            Order             @relation(fields: [orderId], references: [id])
+  incubatorName    String            @map("incubator_name")
+  ideaStudyStatus  PlaceholderStatus @map("idea_study_status") // PLACEHOLDER enum — see note above
+  letterStatus     PlaceholderStatus @map("letter_status") // PLACEHOLDER enum — see note above
+  letterReceivedAt DateTime?         @map("letter_received_at")
+  letterFileUrl    String?           @map("letter_file_url")
+
+  @@index([orderId])
+  @@map("incubator_approvals")
+}
+
+model PartnersDecisionForm {
+  id              String    @id @default(uuid()) @db.Uuid
+  orderId         String    @map("order_id") @db.Uuid
+  order           Order     @relation(fields: [orderId], references: [id])
+  templateVersion String    @map("template_version")
+  signedPartners  Json      @map("signed_partners")
+  signedAt        DateTime? @map("signed_at")
+  fileUrl         String?   @map("file_url")
+
+  @@index([orderId])
+  @@map("partners_decision_forms")
+}
+
+model NonObjectionLetter {
+  id         String            @id @default(uuid()) @db.Uuid
+  orderId    String            @map("order_id") @db.Uuid
+  order      Order             @relation(fields: [orderId], references: [id])
+  isRequired Boolean           @map("is_required") // true only for a non-Saudi resident living inside Saudi Arabia
+  status     PlaceholderStatus // PLACEHOLDER enum — see note above
+  fileUrl    String?           @map("file_url")
+
+  @@index([orderId])
+  @@map("non_objection_letters")
+}
+
+model AuditLog {
+  id          String   @id @default(uuid()) @db.Uuid
+  actorUserId String   @map("actor_user_id") @db.Uuid
+  actorUser   User     @relation("AuditLogActor", fields: [actorUserId], references: [id])
+  action      String
+  entityType  String   @map("entity_type")
+  entityId    String   @map("entity_id") @db.Uuid
+  oldValue    Json?    @map("old_value")
+  newValue    Json?    @map("new_value")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([entityType, entityId])
+  @@index([actorUserId])
+  @@map("audit_log")
+}
