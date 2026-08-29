@@ -24,7 +24,9 @@
       "Bash(openssl rand *)",
       "Bash(mkdir -p \"/Users/ia-imad/Documents/Github/Leapin/leapin/src/app/api/auth/[...nextauth]\")",
       "Bash(command -v docker)",
-      "Bash(rm -rf /Users/ia-imad/Documents/Github/Leapin/leapin/.next /tmp/dev-boot.log /tmp/dev-boot.pid /tmp/dev-home.html *)"
+      "Bash(rm -rf /Users/ia-imad/Documents/Github/Leapin/leapin/.next /tmp/dev-boot.log /tmp/dev-boot.pid /tmp/dev-home.html *)",
+      "Bash(curl -s -o /dev/null -w \"home: %{http_code}\\\\n\" http://localhost:3000/)",
+      "Bash(curl -s -o /dev/null -w \"admin: %{http_code}\\\\n\" http://localhost:3000/admin)"
     ],
     "additionalDirectories": [
       "/Users/ia-imad/Documents/Github/Leapin/leapin/src/app/api/auth",
