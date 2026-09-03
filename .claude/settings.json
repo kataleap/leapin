@@ -31,7 +31,20 @@
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
       "Bash(git push *)",
-      "Bash(gh auth *)"
+      "Bash(gh auth *)",
+      "Bash(kill 62063)",
+      "Bash(curl -s -o /dev/null -w \"loggedout /admin: %{http_code} -> \" http://localhost:3000/admin)",
+      "Bash(curl -s -D - -o /dev/null http://localhost:3000/admin)",
+      "Bash(curl -s -D - -o /dev/null http://localhost:3000/superadmin)",
+      "Bash(curl -s -b /tmp/leapin_cookies.txt -o /dev/null -w \"superadmin \\(as super_admin\\): %{http_code}\\\\n\" http://localhost:3000/superadmin)",
+      "Bash(curl -s -b /tmp/leapin_cookies.txt -o /dev/null -w \"admin \\(as super_admin\\): %{http_code}\\\\n\" http://localhost:3000/admin)",
+      "Read(//private/tmp/**)",
+      "Bash(curl -s -b /tmp/leapin_cookies.txt -D - -o /dev/null http://localhost:3000/superadmin)",
+      "Bash(pkill -f \"next dev\")",
+      "Bash(curl -s -b /tmp/leapin_client_cookies.txt -D - -o /dev/null http://localhost:3000/superadmin)",
+      "Bash(curl -s -X POST -H 'Content-Type: application/json' -d '{\"name\":\"Dup\",\"email\":\"client@leapin.test\",\"password\":\"SomePass123\"}' http://localhost:3000/api/auth/register -w '\\\\nstatus: %{http_code}\\\\n')",
+      "Bash(curl -s -X POST -H 'Content-Type: application/json' -d '{\"name\":\"New Guy\",\"email\":\"newguy@leapin.test\",\"password\":\"SomePass123\"}' http://localhost:3000/api/auth/register -w '\\\\nstatus: %{http_code}\\\\n')",
+      "Bash(curl -s http://localhost:3000/)"
     ],
     "additionalDirectories": [
       "/Users/ia-imad/Documents/Github/Leapin/leapin/src/app/api/auth",

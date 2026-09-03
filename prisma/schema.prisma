@@ -152,6 +152,17 @@ enum OtpStatus {
   expired
 }
 
+// Not part of the source doc's section 5 tables — doc §10.2 only describes
+// the requirement in prose ("notifications to the client on any stage status
+// change, and to admins on a new order or an action awaiting them"). This
+// model is a deliberate addition to make that requirement real; email/
+// WhatsApp delivery is a separate, later integration — this is in-app only.
+enum NotificationType {
+  order_created
+  stage_assigned
+  stage_status_changed
+}
+
 // PLACEHOLDER — the source doc (section 5.2) does not spell out value sets for
 // poa_status / idea_study_status / letter_status / non_objection_letters.status.
 // Kept as one shared minimal enum rather than inventing four distinct business
@@ -397,6 +408,7 @@ model User {
   activitiesSynced     Activity[]      @relation("ActivitiesSyncedByAdmin")
   packagesCreated      Package[]       @relation("PackagesCreatedByUser")
   auditLogsAsActor     AuditLog[]      @relation("AuditLogActor")
+  notifications        Notification[]  @relation("NotificationRecipient")
 
   @@map("users")
 }
@@ -646,4 +658,22 @@ model AuditLog {
   @@index([entityType, entityId])
   @@index([actorUserId])
   @@map("audit_log")
+}
+
+model Notification {
+  id        String           @id @default(uuid()) @db.Uuid
+  userId    String           @map("user_id") @db.Uuid
+  user      User             @relation("NotificationRecipient", fields: [userId], references: [id])
+  type      NotificationType
+  title     String
+  message   String
+  // Plain UUID, no relation — a notification should still exist and read
+  // fine even if the order it references is later deleted; the link target
+  // only needs the raw id, no join is ever required for the notification list.
+  orderId   String?          @map("order_id") @db.Uuid
+  isRead    Boolean          @default(false) @map("is_read")
+  createdAt DateTime         @default(now()) @map("created_at")
+
+  @@index([userId, isRead])
+  @@map("notifications")
 }

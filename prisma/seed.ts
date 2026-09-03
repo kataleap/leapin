@@ -6,11 +6,37 @@
 // exists to demonstrate the seeding pattern for reference tables, not to
 // populate production-ready content.
 
+// `tsx` does not auto-load .env the way `next dev` or the Prisma CLI do —
+// running this file directly (or via `pnpm db:seed`) without this line
+// silently connects with an empty DATABASE_URL instead of failing loudly.
+import "dotenv/config";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../src/generated/prisma/client";
+import { hashPassword } from "../src/lib/auth/password";
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
 const prisma = new PrismaClient({ adapter });
+
+// ⚠️ LOCAL DEV ONLY — hardcoded weak password for manual RBAC testing.
+// Never seed these into a staging/production database.
+const DEV_PASSWORD = "DevPassw0rd!";
+
+async function seedTestUsers() {
+  const passwordHash = await hashPassword(DEV_PASSWORD);
+  const users = [
+    { email: "client@leapin.test", name: "Test Client", role: "client" as const },
+    { email: "admin@leapin.test", name: "Test Admin", role: "admin" as const },
+    { email: "superadmin@leapin.test", name: "Test Super Admin", role: "super_admin" as const },
+  ];
+  for (const u of users) {
+    await prisma.user.upsert({
+      where: { email: u.email },
+      update: {},
+      create: { ...u, passwordHash, isActive: true },
+    });
+  }
+  console.log(`Seeded 3 dev-only test users (password: "${DEV_PASSWORD}").`);
+}
 
 async function main() {
   const regularTrack = await prisma.track.upsert({
@@ -50,6 +76,8 @@ async function main() {
       status: "tbd",
     },
   });
+
+  await seedTestUsers();
 
   console.log("Seed complete (placeholder data — do not treat as approved).", {
     regularTrack: regularTrack.code,
