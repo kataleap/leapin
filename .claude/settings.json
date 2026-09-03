@@ -28,7 +28,10 @@
       "Bash(curl -s -o /dev/null -w \"home: %{http_code}\\\\n\" http://localhost:3000/)",
       "Bash(curl -s -o /dev/null -w \"admin: %{http_code}\\\\n\" http://localhost:3000/admin)",
       "Bash(git check-ignore *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(gh auth *)"
     ],
     "additionalDirectories": [
       "/Users/ia-imad/Documents/Github/Leapin/leapin/src/app/api/auth",
