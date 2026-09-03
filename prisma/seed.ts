@@ -38,6 +38,68 @@ async function seedTestUsers() {
   console.log(`Seeded 3 dev-only test users (password: "${DEV_PASSWORD}").`);
 }
 
+// Doc §3.2 of مستند_نطاق_المرحلة_الثانية.md: activate "service" + "commercial"
+// together this phase; "professional" stays TBD/unactivated, not seeded.
+// Both tied to the regular-investment track (architecture doc §5.1).
+async function seedActivityClassification(regularTrackId: string) {
+  const service = await prisma.activityCategory.upsert({
+    where: { trackId_code: { trackId: regularTrackId, code: "service" } },
+    update: {},
+    create: {
+      trackId: regularTrackId,
+      code: "service",
+      nameAr: "نشاط خدمي", // placeholder wording
+      minForeignCompanies: 1,
+      minCapitalSar: 100000,
+      allowedInEntrepreneurship: true,
+      status: "active",
+    },
+  });
+
+  const commercial = await prisma.activityCategory.upsert({
+    where: { trackId_code: { trackId: regularTrackId, code: "commercial" } },
+    update: {},
+    create: {
+      trackId: regularTrackId,
+      code: "commercial",
+      nameAr: "نشاط تجاري", // placeholder wording
+      minForeignCompanies: 3, // 1 primary + 2 subsidiary, per doc §3.2
+      minCapitalSar: 30000000,
+      allowedInEntrepreneurship: false,
+      status: "active",
+    },
+  });
+
+  // Mixing matrix (doc §3.2): commercial can add service; service adds
+  // nothing else; professional stays fully isolated (moot — not activated).
+  await prisma.activityMixingRule.upsert({
+    where: { baseCategoryId_addableCategoryId: { baseCategoryId: commercial.id, addableCategoryId: service.id } },
+    update: {},
+    create: { baseCategoryId: commercial.id, addableCategoryId: service.id, isAllowed: true },
+  });
+
+  // Illustrative placeholder activities only — the real MISA-sourced list is
+  // a separate operational task (doc §3.3), not part of this technical
+  // delivery. `Activity` has no natural unique key besides `id`, so guard
+  // with a lookup instead of `upsert`.
+  const placeholderActivities: { categoryId: string; misaActivityCode: string; nameAr: string; nameEn: string }[] = [
+    { categoryId: service.id, misaActivityCode: "SRV-0001", nameAr: "نشاط خدمي تجريبي 1", nameEn: "Sample service activity 1" },
+    { categoryId: service.id, misaActivityCode: "SRV-0002", nameAr: "نشاط خدمي تجريبي 2", nameEn: "Sample service activity 2" },
+    { categoryId: commercial.id, misaActivityCode: "COM-0001", nameAr: "نشاط تجاري تجريبي 1", nameEn: "Sample commercial activity 1" },
+    { categoryId: commercial.id, misaActivityCode: "COM-0002", nameAr: "نشاط تجاري تجريبي 2", nameEn: "Sample commercial activity 2" },
+  ];
+  for (const a of placeholderActivities) {
+    const existing = await prisma.activity.findFirst({
+      where: { categoryId: a.categoryId, misaActivityCode: a.misaActivityCode },
+    });
+    if (!existing) {
+      await prisma.activity.create({ data: a });
+    }
+  }
+
+  console.log("Seeded activity classification (service + commercial categories, mixing rule, placeholder activities).");
+}
+
 async function main() {
   const regularTrack = await prisma.track.upsert({
     where: { code: "regular_investment" },
@@ -77,6 +139,7 @@ async function main() {
     },
   });
 
+  await seedActivityClassification(regularTrack.id);
   await seedTestUsers();
 
   console.log("Seed complete (placeholder data — do not treat as approved).", {

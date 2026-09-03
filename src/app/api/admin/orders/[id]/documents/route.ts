@@ -4,13 +4,11 @@ import { UserRole } from "@/generated/prisma/enums";
 import { requireRole } from "@/lib/auth/guards";
 import { logAudit } from "@/lib/audit";
 import { handlePrismaError } from "@/lib/api-errors";
-import { documentUploadSchema } from "@/lib/validation/admin-orders";
+import { documentUploadMetaSchema } from "@/lib/validation/admin-orders";
+import { DocumentUploadError, saveUploadedFile } from "@/lib/storage/documents";
 
 type Params = { params: Promise<{ id: string }> };
 
-// Actual file storage (S3 or similar) is a separate, deferred integration —
-// this expects `fileUrl` to already point at a stored file, matching the
-// `file_url VARCHAR` shape already established at the DB-layer step.
 export async function POST(request: Request, { params }: Params) {
   const { session, response } = await requireRole([UserRole.admin, UserRole.super_admin]);
   if (response) return response;
@@ -28,8 +26,20 @@ export async function POST(request: Request, { params }: Params) {
     }
   }
 
-  const body = await request.json().catch(() => null);
-  const parsed = documentUploadSchema.safeParse(body);
+  const formData = await request.formData().catch(() => null);
+  if (!formData) {
+    return NextResponse.json({ error: "Expected multipart/form-data." }, { status: 400 });
+  }
+
+  const file = formData.get("file");
+  if (!(file instanceof File)) {
+    return NextResponse.json({ error: "A 'file' field is required." }, { status: 400 });
+  }
+
+  const parsed = documentUploadMetaSchema.safeParse({
+    documentType: formData.get("documentType"),
+    isVisibleToClient: formData.get("isVisibleToClient"),
+  });
   if (!parsed.success) {
     return NextResponse.json(
       { error: "Invalid input", issues: parsed.error.flatten() },
@@ -38,13 +48,14 @@ export async function POST(request: Request, { params }: Params) {
   }
 
   try {
+    const saved = await saveUploadedFile(orderId, file);
     const document = await prisma.documentVault.create({
       data: {
         orderId,
         documentType: parsed.data.documentType,
-        fileUrl: parsed.data.fileUrl,
         isVisibleToClient: parsed.data.isVisibleToClient,
         uploadedByAdminId: session.user.id,
+        ...saved,
       },
     });
     await logAudit({
@@ -56,6 +67,9 @@ export async function POST(request: Request, { params }: Params) {
     });
     return NextResponse.json({ document }, { status: 201 });
   } catch (err) {
+    if (err instanceof DocumentUploadError) {
+      return NextResponse.json({ error: err.message }, { status: 400 });
+    }
     const handled = handlePrismaError(err);
     if (handled) return handled;
     throw err;

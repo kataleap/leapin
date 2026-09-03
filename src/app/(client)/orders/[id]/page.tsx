@@ -131,12 +131,12 @@ export default async function OrderDetailPage({ params }: Params) {
               {order.documents.map((doc) => (
                 <li key={doc.id}>
                   <a
-                    href={doc.fileUrl}
+                    href={`/api/documents/${doc.id}/file`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-primary text-sm underline"
                   >
-                    {doc.documentType}
+                    {doc.originalFileName}
                   </a>
                 </li>
               ))}

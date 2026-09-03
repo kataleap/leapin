@@ -10,7 +10,14 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 
+// Categories (and therefore Stage-3 activity selection) are only ever
+// seeded against the regular-investment track (architecture doc §5.1) — the
+// entrepreneurship track skips both steps entirely.
+const CATEGORY_ELIGIBLE_TRACK_CODE = "regular_investment";
+
 type Track = { id: string; code: string; nameAr: string; description: string | null };
+type ActivityCategory = { id: string; code: string; nameAr: string };
+type Activity = { id: string; nameAr: string; misaActivityCode: string };
 type Package = {
   id: string;
   nameAr: string;
@@ -37,6 +44,14 @@ export default function JourneyPage() {
   const [tracks, setTracks] = useState<Track[] | null>(null);
   const [trackId, setTrackId] = useState<string | null>(null);
 
+  const [categories, setCategories] = useState<ActivityCategory[] | null>(null);
+  const [categoryId, setCategoryId] = useState<string | null>(null);
+
+  const [activities, setActivities] = useState<Activity[] | null>(null);
+  const [addableCategory, setAddableCategory] = useState<ActivityCategory | null>(null);
+  const [addableActivities, setAddableActivities] = useState<Activity[] | null>(null);
+  const [selectedActivityIds, setSelectedActivityIds] = useState<string[]>([]);
+
   const [packages, setPackages] = useState<Package[] | null>(null);
   const [packageId, setPackageId] = useState<string | null>(null);
 
@@ -48,8 +63,12 @@ export default function JourneyPage() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
 
+  const selectedTrack = tracks?.find((t) => t.id === trackId) ?? null;
+  const categoryEligible = selectedTrack?.code === CATEGORY_ELIGIBLE_TRACK_CODE;
   const selectedPackage = packages?.find((p) => p.id === packageId) ?? null;
-  const selectionComplete = !!trackId && !!packageId && (!selectedPackage?.requiresCountry || !!countryId);
+  const packageStepReady = !!trackId && (!categoryEligible || !!categoryId);
+  const selectionComplete =
+    packageStepReady && !!packageId && (!selectedPackage?.requiresCountry || !!countryId);
   const estimating = selectionComplete && !estimate && !estimateError;
 
   // Load tracks once.
@@ -58,6 +77,44 @@ export default function JourneyPage() {
       if (data) setTracks(data.tracks);
     });
   }, []);
+
+  // Load categories whenever a category-eligible track is selected.
+  useEffect(() => {
+    if (!trackId || !categoryEligible) return;
+    let ignore = false;
+    getJson<{ categories: ActivityCategory[] }>(`/api/journey/categories?track=${trackId}`).then(({ data }) => {
+      if (!ignore && data) setCategories(data.categories);
+    });
+    return () => {
+      ignore = true;
+    };
+  }, [trackId, categoryEligible]);
+
+  // Load activities (primary + addable-via-mixing-rule) whenever the category changes.
+  useEffect(() => {
+    if (!categoryId) return;
+    let ignore = false;
+    getJson<{ activities: Activity[] }>(`/api/journey/activities?category=${categoryId}`).then(({ data }) => {
+      if (!ignore && data) setActivities(data.activities);
+    });
+    getJson<{ addableCategories: ActivityCategory[] }>(`/api/journey/activity-mixing?category=${categoryId}`).then(
+      ({ data }) => {
+        if (ignore || !data) return;
+        const addable = data.addableCategories[0] ?? null;
+        setAddableCategory(addable);
+        if (addable) {
+          getJson<{ activities: Activity[] }>(`/api/journey/activities?category=${addable.id}`).then(
+            ({ data: addableData }) => {
+              if (!ignore && addableData) setAddableActivities(addableData.activities);
+            }
+          );
+        }
+      }
+    );
+    return () => {
+      ignore = true;
+    };
+  }, [categoryId]);
 
   // Load packages whenever the selected track changes.
   useEffect(() => {
@@ -100,10 +157,30 @@ export default function JourneyPage() {
 
   function handleTrackChange(id: string) {
     setTrackId(id);
+    setCategories(null);
+    setCategoryId(null);
+    setActivities(null);
+    setAddableCategory(null);
+    setAddableActivities(null);
+    setSelectedActivityIds([]);
     setPackages(null);
     setPackageId(null);
     setEstimate(null);
     setEstimateError(null);
+  }
+
+  function handleCategoryChange(id: string) {
+    setCategoryId(id);
+    setActivities(null);
+    setAddableCategory(null);
+    setAddableActivities(null);
+    setSelectedActivityIds([]);
+    setEstimate(null);
+    setEstimateError(null);
+  }
+
+  function toggleActivity(id: string) {
+    setSelectedActivityIds((prev) => (prev.includes(id) ? prev.filter((a) => a !== id) : [...prev, id]));
   }
 
   function handlePackageChange(id: string) {
@@ -126,7 +203,13 @@ export default function JourneyPage() {
     const { ok, data, error } = await getJson<{ order: { id: string } }>("/api/orders", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ trackId, packageId, countryId }),
+      body: JSON.stringify({
+        trackId,
+        packageId,
+        countryId,
+        activityCategoryId: categoryId,
+        activityIds: selectedActivityIds,
+      }),
     });
     setSubmitting(false);
     if (ok && data) {
@@ -135,6 +218,13 @@ export default function JourneyPage() {
       setSubmitError(error ?? "Could not create the order.");
     }
   }
+
+  let stepNumber = 1;
+  const trackStep = stepNumber++;
+  const categoryStep = categoryEligible ? stepNumber++ : null;
+  const activitiesStep = categoryEligible ? stepNumber++ : null;
+  const packageStep = stepNumber++;
+  const countryStep = stepNumber++;
 
   return (
     <main className="mx-auto max-w-2xl space-y-8 px-4 py-10">
@@ -146,7 +236,7 @@ export default function JourneyPage() {
       </div>
 
       <section className="space-y-3">
-        <h2 className="text-sm font-medium">1. اختر المسار</h2>
+        <h2 className="text-sm font-medium">{trackStep}. اختر المسار</h2>
         {tracks === null ? (
           <Skeleton className="h-24 w-full" />
         ) : (
@@ -170,9 +260,83 @@ export default function JourneyPage() {
         )}
       </section>
 
-      {trackId && (
+      {categoryEligible && trackId && (
         <section className="space-y-3">
-          <h2 className="text-sm font-medium">2. اختر الباقة</h2>
+          <h2 className="text-sm font-medium">{categoryStep}. اختر الفئة النشاطية</h2>
+          {categories === null ? (
+            <Skeleton className="h-24 w-full" />
+          ) : categories.length === 0 ? (
+            <p className="text-muted-foreground text-sm">لا توجد فئات نشاطية متاحة حاليًا.</p>
+          ) : (
+            <RadioGroup value={categoryId ?? ""} onValueChange={handleCategoryChange} className="gap-3">
+              {categories.map((category) => (
+                <Label
+                  key={category.id}
+                  htmlFor={`category-${category.id}`}
+                  className="flex cursor-pointer items-start gap-3 rounded-lg border p-4 has-[[data-state=checked]]:border-primary"
+                >
+                  <RadioGroupItem value={category.id} id={`category-${category.id}`} className="mt-1" />
+                  <span className="block font-medium">{category.nameAr}</span>
+                </Label>
+              ))}
+            </RadioGroup>
+          )}
+        </section>
+      )}
+
+      {categoryEligible && categoryId && (
+        <section className="space-y-3">
+          <h2 className="text-sm font-medium">{activitiesStep}. اختر الأنشطة (اختياري)</h2>
+          {activities === null ? (
+            <Skeleton className="h-16 w-full" />
+          ) : activities.length === 0 ? (
+            <p className="text-muted-foreground text-sm">لا توجد أنشطة متاحة لهذه الفئة حاليًا.</p>
+          ) : (
+            <div className="space-y-1 rounded-lg border p-2">
+              {activities.map((activity) => (
+                <label key={activity.id} className="hover:bg-muted flex items-center gap-2 rounded p-1.5 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={selectedActivityIds.includes(activity.id)}
+                    onChange={() => toggleActivity(activity.id)}
+                  />
+                  <span>{activity.nameAr}</span>
+                </label>
+              ))}
+            </div>
+          )}
+
+          {addableCategory && (
+            <div className="space-y-2 pt-2">
+              <p className="text-muted-foreground text-sm">
+                يمكنك أيضًا إضافة أنشطة من فئة «{addableCategory.nameAr}»:
+              </p>
+              {addableActivities === null ? (
+                <Skeleton className="h-16 w-full" />
+              ) : addableActivities.length === 0 ? (
+                <p className="text-muted-foreground text-sm">لا توجد أنشطة متاحة لهذه الفئة حاليًا.</p>
+              ) : (
+                <div className="space-y-1 rounded-lg border p-2">
+                  {addableActivities.map((activity) => (
+                    <label key={activity.id} className="hover:bg-muted flex items-center gap-2 rounded p-1.5 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={selectedActivityIds.includes(activity.id)}
+                        onChange={() => toggleActivity(activity.id)}
+                      />
+                      <span>{activity.nameAr}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+      )}
+
+      {packageStepReady && trackId && (
+        <section className="space-y-3">
+          <h2 className="text-sm font-medium">{packageStep}. اختر الباقة</h2>
           {packages === null ? (
             <Skeleton className="h-24 w-full" />
           ) : packages.length === 0 ? (
@@ -206,7 +370,7 @@ export default function JourneyPage() {
 
       {selectedPackage?.requiresCountry && (
         <section className="space-y-3">
-          <h2 className="text-sm font-medium">3. اختر الدولة</h2>
+          <h2 className="text-sm font-medium">{countryStep}. اختر الدولة</h2>
           {countries === null ? (
             <Skeleton className="h-16 w-full" />
           ) : (

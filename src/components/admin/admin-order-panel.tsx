@@ -15,7 +15,12 @@ type OrderStage = {
   assignedAdminId: string | null;
   stage: { nameAr: string; code: string };
 };
-type DocumentItem = { id: string; documentType: string; fileUrl: string; isVisibleToClient: boolean };
+type DocumentItem = {
+  id: string;
+  documentType: string;
+  originalFileName: string;
+  isVisibleToClient: boolean;
+};
 type TradeName = { id: string; nameAr: string; batchNumber: number; priorityRank: number; status: string };
 
 const STAGE_STATUS_OPTIONS = [
@@ -144,20 +149,28 @@ function DocumentUploadCard({
   onUploaded: (doc: DocumentItem) => void;
 }) {
   const [documentType, setDocumentType] = useState("other");
-  const [fileUrl, setFileUrl] = useState("");
+  const [file, setFile] = useState<File | null>(null);
   const [isVisibleToClient, setIsVisibleToClient] = useState(false);
+  const [dragging, setDragging] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    if (!file) {
+      setError("اختر ملفًا للرفع.");
+      return;
+    }
     setSubmitting(true);
     try {
+      const formData = new FormData();
+      formData.set("file", file);
+      formData.set("documentType", documentType);
+      formData.set("isVisibleToClient", String(isVisibleToClient));
       const res = await fetch(`/api/admin/orders/${orderId}/documents`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ documentType, fileUrl, isVisibleToClient }),
+        body: formData,
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) {
@@ -165,10 +178,17 @@ function DocumentUploadCard({
         return;
       }
       onUploaded(data.document);
-      setFileUrl("");
+      setFile(null);
     } finally {
       setSubmitting(false);
     }
+  }
+
+  function handleDrop(e: React.DragEvent<HTMLDivElement>) {
+    e.preventDefault();
+    setDragging(false);
+    const dropped = e.dataTransfer.files?.[0];
+    if (dropped) setFile(dropped);
   }
 
   return (
@@ -181,8 +201,13 @@ function DocumentUploadCard({
           <ul className="space-y-1 text-sm">
             {documents.map((d) => (
               <li key={d.id} className="flex items-center justify-between">
-                <a href={d.fileUrl} target="_blank" rel="noopener noreferrer" className="text-primary underline">
-                  {d.documentType}
+                <a
+                  href={`/api/documents/${d.id}/file`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary underline"
+                >
+                  {d.originalFileName}
                 </a>
                 <Badge variant={d.isVisibleToClient ? "default" : "outline"}>
                   {d.isVisibleToClient ? "ظاهر للعميل" : "مخفي"}
@@ -191,32 +216,51 @@ function DocumentUploadCard({
             ))}
           </ul>
         )}
-        <form onSubmit={handleSubmit} className="flex flex-wrap items-end gap-3">
-          <div className="space-y-1.5">
-            <Label>النوع</Label>
-            <select className={selectClass} value={documentType} onChange={(e) => setDocumentType(e.target.value)}>
-              <option value="misa_license">ترخيص وزارة الاستثمار</option>
-              <option value="commercial_register">السجل التجاري</option>
-              <option value="incorporation_contract">عقد التأسيس</option>
-              <option value="foreign_company_docs">مستندات الشركة الأجنبية</option>
-              <option value="financial_statements">القوائم المالية</option>
-              <option value="other">أخرى</option>
-            </select>
+        <form onSubmit={handleSubmit} className="space-y-3">
+          <div className="flex flex-wrap items-end gap-3">
+            <div className="space-y-1.5">
+              <Label>النوع</Label>
+              <select className={selectClass} value={documentType} onChange={(e) => setDocumentType(e.target.value)}>
+                <option value="misa_license">ترخيص وزارة الاستثمار</option>
+                <option value="commercial_register">السجل التجاري</option>
+                <option value="incorporation_contract">عقد التأسيس</option>
+                <option value="foreign_company_docs">مستندات الشركة الأجنبية</option>
+                <option value="financial_statements">القوائم المالية</option>
+                <option value="other">أخرى</option>
+              </select>
+            </div>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={isVisibleToClient}
+                onChange={(e) => setIsVisibleToClient(e.target.checked)}
+              />
+              ظاهر للعميل
+            </label>
           </div>
-          <div className="min-w-64 space-y-1.5">
-            <Label>رابط الملف</Label>
-            <Input value={fileUrl} onChange={(e) => setFileUrl(e.target.value)} required />
-          </div>
-          <label className="flex items-center gap-2 text-sm">
+
+          <div
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDragging(true);
+            }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={handleDrop}
+            className={`flex flex-col items-center gap-2 rounded-lg border-2 border-dashed p-4 text-center text-sm ${
+              dragging ? "border-primary bg-muted" : "border-input"
+            }`}
+          >
+            <p className="text-muted-foreground">اسحب الملف هنا أو اختره من جهازك</p>
             <input
-              type="checkbox"
-              checked={isVisibleToClient}
-              onChange={(e) => setIsVisibleToClient(e.target.checked)}
+              type="file"
+              accept="application/pdf,image/jpeg,image/png,image/webp"
+              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
             />
-            ظاهر للعميل
-          </label>
+            {file && <p className="text-sm font-medium">{file.name}</p>}
+          </div>
+
           <Button type="submit" disabled={submitting}>
-            رفع
+            {submitting ? "جارٍ الرفع..." : "رفع"}
           </Button>
         </form>
         {error && <p className="text-destructive text-sm" role="alert">{error}</p>}
@@ -236,19 +280,32 @@ function TradeNamesCard({
   onBatchSubmitted: (names: TradeName[]) => void;
   onStatusUpdated: (id: string, status: string) => void;
 }) {
-  const [names, setNames] = useState(["", "", "", "", ""]);
+  const [names, setNames] = useState<string[]>([""]);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  function addName() {
+    setNames((prev) => (prev.length < 10 ? [...prev, ""] : prev));
+  }
+
+  function removeName(idx: number) {
+    setNames((prev) => (prev.length > 1 ? prev.filter((_, i) => i !== idx) : prev));
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
+    const trimmed = names.map((n) => n.trim()).filter(Boolean);
+    if (trimmed.length === 0) {
+      setError("أدخل اسمًا واحدًا على الأقل.");
+      return;
+    }
     setSubmitting(true);
     try {
       const res = await fetch(`/api/admin/orders/${orderId}/trade-names/batch`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ names }),
+        body: JSON.stringify({ names: trimmed }),
       });
       const data = await res.json().catch(() => null);
       if (!res.ok) {
@@ -256,7 +313,7 @@ function TradeNamesCard({
         return;
       }
       onBatchSubmitted(data.tradeNames);
-      setNames(["", "", "", "", ""]);
+      setNames([""]);
     } finally {
       setSubmitting(false);
     }
@@ -301,21 +358,31 @@ function TradeNamesCard({
           </ul>
         )}
         <form onSubmit={handleSubmit} className="space-y-2">
-          <Label>دفعة جديدة (5 أسماء)</Label>
-          <div className="grid grid-cols-2 gap-2">
+          <Label>دفعة جديدة (١–١٠ أسماء)</Label>
+          <div className="space-y-2">
             {names.map((n, idx) => (
-              <Input
-                key={idx}
-                value={n}
-                placeholder={`اسم ${idx + 1}`}
-                onChange={(e) => setNames((prev) => prev.map((v, i) => (i === idx ? e.target.value : v)))}
-                required
-              />
+              <div key={idx} className="flex items-center gap-2">
+                <Input
+                  value={n}
+                  placeholder={`اسم ${idx + 1}`}
+                  onChange={(e) => setNames((prev) => prev.map((v, i) => (i === idx ? e.target.value : v)))}
+                />
+                {names.length > 1 && (
+                  <Button type="button" variant="ghost" size="sm" onClick={() => removeName(idx)}>
+                    إزالة
+                  </Button>
+                )}
+              </div>
             ))}
           </div>
-          <Button type="submit" disabled={submitting}>
-            إرسال الدفعة
-          </Button>
+          <div className="flex items-center gap-3">
+            <Button type="button" variant="outline" size="sm" disabled={names.length >= 10} onClick={addName}>
+              + إضافة اسم
+            </Button>
+            <Button type="submit" disabled={submitting}>
+              إرسال الدفعة
+            </Button>
+          </div>
         </form>
         {error && <p className="text-destructive text-sm" role="alert">{error}</p>}
       </CardContent>

@@ -40,6 +40,9 @@ yarn-error.log*
 # prisma
 /src/generated/prisma
 
+# locally-stored uploaded documents (Phase 2 §4 — local disk this phase, not S3)
+/storage/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

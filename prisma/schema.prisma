@@ -265,6 +265,8 @@ model Activity {
   syncedByAdminId  String?          @map("synced_by_admin_id") @db.Uuid
   syncedByAdmin    User?            @relation("ActivitiesSyncedByAdmin", fields: [syncedByAdminId], references: [id])
 
+  orderActivities OrderActivity[]
+
   @@index([categoryId])
   @@map("activities")
 }
@@ -503,11 +505,26 @@ model Order {
   incubatorApprovals          IncubatorApproval[]
   partnersDecisionForms       PartnersDecisionForm[]
   nonObjectionLetters         NonObjectionLetter[]
+  orderActivities             OrderActivity[]
 
   @@index([clientId])
   @@index([status])
   @@index([trackId])
   @@map("orders")
+}
+
+// Phase 2 addition — not part of the original 21-table doc. Persists which
+// activities (within the order's activityCategory, or an addable category
+// per an activity_mixing_rules row) a client selected during journey Stage 3.
+model OrderActivity {
+  id         String   @id @default(uuid()) @db.Uuid
+  orderId    String   @map("order_id") @db.Uuid
+  order      Order    @relation(fields: [orderId], references: [id])
+  activityId String   @map("activity_id") @db.Uuid
+  activity   Activity @relation(fields: [activityId], references: [id])
+
+  @@unique([orderId, activityId])
+  @@map("order_activities")
 }
 
 model OrderStage {
@@ -578,7 +595,13 @@ model DocumentVault {
   orderId           String       @map("order_id") @db.Uuid
   order             Order        @relation(fields: [orderId], references: [id])
   documentType      DocumentType @map("document_type")
-  fileUrl           String       @map("file_url")
+  // Phase 2: replaces the original `file_url` (pasted-URL) column — this now
+  // holds a path relative to the local documents storage root, never a
+  // public URL. See src/lib/storage/documents.ts.
+  storagePath       String       @map("storage_path")
+  originalFileName  String       @map("original_file_name")
+  mimeType          String       @map("mime_type")
+  fileSizeBytes     Int          @map("file_size_bytes")
   uploadedByAdminId String       @map("uploaded_by_admin_id") @db.Uuid
   uploadedByAdmin   User         @relation("DocumentsUploadedByAdmin", fields: [uploadedByAdminId], references: [id])
   isVisibleToClient Boolean      @default(false) @map("is_visible_to_client") // default not specified in doc — defaults hidden until an admin reveals it

@@ -37,10 +37,39 @@ export async function POST(request: Request) {
       { status: 400 }
     );
   }
-  const { trackId, packageId, startStageId, endStageId, countryId, activityCategoryId, paymentPlanId } =
+  const { trackId, packageId, startStageId, endStageId, countryId, activityCategoryId, activityIds, paymentPlanId } =
     parsed.data;
 
   try {
+    // Defense in depth — the journey UI only ever offers activities from the
+    // chosen category or an addable category per an `isAllowed` mixing rule,
+    // but re-validate server-side since this is a state-changing endpoint.
+    if (activityIds && activityIds.length > 0) {
+      if (!activityCategoryId) {
+        return NextResponse.json(
+          { error: "activityCategoryId is required when activityIds is provided." },
+          { status: 400 }
+        );
+      }
+      const allowedCategoryIds = new Set([activityCategoryId]);
+      const mixingRules = await prisma.activityMixingRule.findMany({
+        where: { baseCategoryId: activityCategoryId, isAllowed: true },
+      });
+      for (const rule of mixingRules) allowedCategoryIds.add(rule.addableCategoryId);
+
+      const activities = await prisma.activity.findMany({ where: { id: { in: activityIds } } });
+      if (activities.length !== activityIds.length) {
+        return NextResponse.json({ error: "One or more activityIds do not exist." }, { status: 400 });
+      }
+      const invalid = activities.some((a) => !allowedCategoryIds.has(a.categoryId));
+      if (invalid) {
+        return NextResponse.json(
+          { error: "One or more activities do not belong to the selected category or an addable category." },
+          { status: 400 }
+        );
+      }
+    }
+
     const pricing = await calculateOrderPrice({ trackId, packageId, startStageId, endStageId, countryId });
 
     // doc §7.1: every stage of the track gets an order_stages row — inside
@@ -84,9 +113,15 @@ export async function POST(request: Request) {
         });
       }
 
+      if (activityIds && activityIds.length > 0) {
+        await tx.orderActivity.createMany({
+          data: activityIds.map((activityId) => ({ orderId: created.id, activityId })),
+        });
+      }
+
       return tx.order.findUniqueOrThrow({
         where: { id: created.id },
-        include: { orderStages: true, orderPayments: true },
+        include: { orderStages: true, orderPayments: true, orderActivities: true },
       });
     });
 

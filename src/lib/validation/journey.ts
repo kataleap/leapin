@@ -10,5 +10,6 @@ export const estimateSchema = z.object({
 
 export const orderCreateSchema = estimateSchema.extend({
   activityCategoryId: z.uuid().nullable().optional(),
+  activityIds: z.array(z.uuid()).optional(),
   paymentPlanId: z.uuid().nullable().optional(),
 });
