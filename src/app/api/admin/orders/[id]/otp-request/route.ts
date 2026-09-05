@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { UserRole } from "@/generated/prisma/enums";
 import { requireRole } from "@/lib/auth/guards";
+import { canStaffAccessOrder } from "@/lib/orders/assignment";
 import { logAudit } from "@/lib/audit";
 import { handlePrismaError } from "@/lib/api-errors";
 import { otpRequestSchema } from "@/lib/validation/admin-orders";
@@ -20,13 +21,8 @@ export async function POST(request: Request, { params }: Params) {
   const order = await prisma.order.findUnique({ where: { id: orderId } });
   if (!order) return NextResponse.json({ error: "Not found." }, { status: 404 });
 
-  if (session.user.role === UserRole.admin) {
-    const isAssigned = await prisma.orderStage.findFirst({
-      where: { orderId, assignedAdminId: session.user.id },
-    });
-    if (!isAssigned) {
-      return NextResponse.json({ error: "This order is not assigned to you." }, { status: 403 });
-    }
+  if (!(await canStaffAccessOrder(orderId, session))) {
+    return NextResponse.json({ error: "This order is not assigned to you." }, { status: 403 });
   }
 
   const body = await request.json().catch(() => null);

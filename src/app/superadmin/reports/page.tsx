@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import { requirePageRole } from "@/lib/auth/require-page-role";
+import { UserRole } from "@/generated/prisma/enums";
 
 const ORDER_STATUS_LABEL: Record<string, string> = {
   draft: "مسوّدة",
@@ -72,6 +74,8 @@ function BarChartCard({
 }
 
 export default async function ReportsPage() {
+  await requirePageRole([UserRole.super_admin]);
+
   const [
     totalOrders,
     totalValueAgg,
@@ -82,6 +86,7 @@ export default async function ReportsPage() {
     revenueByPackage,
     stuckStages,
     adminWorkload,
+    notificationsByStatus,
     tracks,
     packages,
     stages,
@@ -108,11 +113,16 @@ export default async function ReportsPage() {
       _count: { _all: true },
       where: { assignedAdminId: { not: null } },
     }),
+    prisma.notificationLog.groupBy({ by: ["status"], _count: { _all: true } }),
     prisma.track.findMany({ select: { id: true, nameAr: true } }),
     prisma.package.findMany({ select: { id: true, nameAr: true } }),
     prisma.stage.findMany({ select: { id: true, nameAr: true } }),
     prisma.user.findMany({ where: { role: { in: ["admin", "super_admin"] } }, select: { id: true, name: true } }),
   ]);
+
+  const totalNotifications = notificationsByStatus.reduce((sum, r) => sum + r._count._all, 0);
+  const sentNotifications = notificationsByStatus.find((r) => r.status === "sent")?._count._all ?? 0;
+  const notificationSuccessRate = totalNotifications > 0 ? Math.round((sentNotifications / totalNotifications) * 100) : null;
 
   const trackName = (id: string) => tracks.find((t) => t.id === id)?.nameAr ?? id;
   const packageName = (id: string) => packages.find((p) => p.id === id)?.nameAr ?? id;
@@ -131,6 +141,10 @@ export default async function ReportsPage() {
         <StatTile label="إجمالي قيمة الطلبات" value={riyal(Number(totalValueAgg._sum.totalPrice ?? 0))} />
         <StatTile label="المبلغ المُحصَّل" value={riyal(Number(collectedAgg._sum.amount ?? 0))} />
         <StatTile label="المبلغ المعلّق" value={riyal(Number(pendingAgg._sum.amount ?? 0))} />
+        <StatTile
+          label="نسبة نجاح إرسال البريد"
+          value={notificationSuccessRate === null ? "—" : `${notificationSuccessRate}%`}
+        />
       </div>
 
       <div className="grid gap-6 sm:grid-cols-2">

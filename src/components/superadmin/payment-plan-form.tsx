@@ -8,10 +8,12 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 
 type Pkg = { id: string; nameAr: string };
+type StageOption = { id: string; nameAr: string };
 
 type Installment = {
   percentage: number;
   triggerType: "on_registration" | "on_stage_complete" | "fixed_date" | "manual";
+  triggerStageId: string | null;
 };
 
 export type PaymentPlanFormValues = {
@@ -30,8 +32,8 @@ const DEFAULTS: PaymentPlanFormValues = {
   isDefault: false,
   isClientSelectable: true,
   installments: [
-    { percentage: 50, triggerType: "on_registration" },
-    { percentage: 50, triggerType: "on_stage_complete" },
+    { percentage: 50, triggerType: "on_registration", triggerStageId: null },
+    { percentage: 50, triggerType: "on_stage_complete", triggerStageId: null },
   ],
 };
 
@@ -57,6 +59,7 @@ export function PaymentPlanForm({
   const router = useRouter();
   const [values, setValues] = useState<PaymentPlanFormValues>({ ...DEFAULTS, ...initial });
   const [packages, setPackages] = useState<Pkg[] | null>(null);
+  const [stages, setStages] = useState<StageOption[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -65,6 +68,9 @@ export function PaymentPlanForm({
     fetch("/api/superadmin/packages")
       .then((r) => r.json())
       .then((d) => setPackages(d.packages ?? []));
+    fetch("/api/superadmin/stages")
+      .then((r) => r.json())
+      .then((d) => setStages(d.stages ?? []));
   }, []);
 
   function set<K extends keyof PaymentPlanFormValues>(key: K, value: PaymentPlanFormValues[K]) {
@@ -80,7 +86,10 @@ export function PaymentPlanForm({
 
   function addInstallment() {
     if (values.installments.length >= 4) return;
-    setValues((v) => ({ ...v, installments: [...v.installments, { percentage: 0, triggerType: "manual" }] }));
+    setValues((v) => ({
+      ...v,
+      installments: [...v.installments, { percentage: 0, triggerType: "manual", triggerStageId: null }],
+    }));
   }
 
   function removeInstallment(index: number) {
@@ -113,6 +122,7 @@ export function PaymentPlanForm({
             installmentNumber: idx + 1,
             percentage: Number(i.percentage),
             triggerType: i.triggerType,
+            triggerStageId: i.triggerType === "on_stage_complete" ? i.triggerStageId : null,
           })),
         }),
       });
@@ -224,6 +234,24 @@ export function PaymentPlanForm({
                 ))}
               </select>
             </div>
+            {installment.triggerType === "on_stage_complete" && (
+              <div className="flex-1 space-y-1.5">
+                <Label>المرحلة المُفعِّلة</Label>
+                <select
+                  className={selectClass}
+                  value={installment.triggerStageId ?? ""}
+                  onChange={(e) => setInstallment(index, { triggerStageId: e.target.value || null })}
+                  required
+                >
+                  <option value="">— اختر مرحلة —</option>
+                  {stages?.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.nameAr}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             {values.installments.length > 2 && (
               <Button type="button" variant="ghost" size="sm" onClick={() => removeInstallment(index)}>
                 حذف

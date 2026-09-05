@@ -3,8 +3,12 @@ import { prisma } from "@/lib/prisma";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { requirePageRole } from "@/lib/auth/require-page-role";
+import { UserRole } from "@/generated/prisma/enums";
 
 export default async function ActivityCategoriesListPage() {
+  await requirePageRole([UserRole.super_admin]);
+
   const categories = await prisma.activityCategory.findMany({
     include: { track: true },
     orderBy: { nameAr: "asc" },

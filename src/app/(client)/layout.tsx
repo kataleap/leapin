@@ -19,6 +19,9 @@ export default async function ClientLayout({
           <Link href="/documents" className="text-muted-foreground hover:text-foreground text-sm">
             مستنداتي
           </Link>
+          <Link href="/payments" className="text-muted-foreground hover:text-foreground text-sm">
+            مدفوعاتي
+          </Link>
           <NotificationBell />
         </header>
       )}

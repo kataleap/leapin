@@ -1,10 +1,14 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { CountryForm } from "@/components/superadmin/country-form";
+import { requirePageRole } from "@/lib/auth/require-page-role";
+import { UserRole } from "@/generated/prisma/enums";
 
 type Params = { params: Promise<{ id: string }> };
 
 export default async function EditCountryPage({ params }: Params) {
+  await requirePageRole([UserRole.super_admin]);
+
   const { id } = await params;
   const country = await prisma.country.findUnique({ where: { id } });
   if (!country) notFound();

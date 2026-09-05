@@ -1,15 +1,13 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
-import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { UserRole } from "@/generated/prisma/enums";
+import { requirePageRole } from "@/lib/auth/require-page-role";
 import { SignOutButton } from "@/components/auth/sign-out-button";
 import { Card, CardHeader, CardTitle, CardDescription, CardAction } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
 export default async function AdminHomePage() {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
+  const session = await requirePageRole([UserRole.admin, UserRole.super_admin]);
 
   const orders = await prisma.order.findMany({
     where:

@@ -3,10 +3,14 @@ import { prisma } from "@/lib/prisma";
 import { StageForm } from "@/components/superadmin/stage-form";
 import { StagePricingManager } from "@/components/superadmin/stage-pricing-manager";
 import { Separator } from "@/components/ui/separator";
+import { requirePageRole } from "@/lib/auth/require-page-role";
+import { UserRole } from "@/generated/prisma/enums";
 
 type Params = { params: Promise<{ id: string }> };
 
 export default async function EditStagePage({ params }: Params) {
+  await requirePageRole([UserRole.super_admin]);
+
   const { id } = await params;
   const stage = await prisma.stage.findUnique({
     where: { id },

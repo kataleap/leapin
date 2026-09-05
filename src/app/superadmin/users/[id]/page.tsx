@@ -1,13 +1,13 @@
-import { notFound, redirect } from "next/navigation";
-import { auth } from "@/auth";
+import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { UserRole } from "@/generated/prisma/enums";
+import { requirePageRole } from "@/lib/auth/require-page-role";
 import { UserForm } from "@/components/superadmin/user-form";
 
 type Params = { params: Promise<{ id: string }> };
 
 export default async function EditUserPage({ params }: Params) {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
+  const session = await requirePageRole([UserRole.super_admin]);
 
   const { id } = await params;
   const user = await prisma.user.findUnique({

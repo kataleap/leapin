@@ -1,10 +1,14 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { PaymentPlanForm } from "@/components/superadmin/payment-plan-form";
+import { requirePageRole } from "@/lib/auth/require-page-role";
+import { UserRole } from "@/generated/prisma/enums";
 
 type Params = { params: Promise<{ id: string }> };
 
 export default async function EditPaymentPlanPage({ params }: Params) {
+  await requirePageRole([UserRole.super_admin]);
+
   const { id } = await params;
   const plan = await prisma.paymentPlan.findUnique({
     where: { id },
@@ -27,6 +31,7 @@ export default async function EditPaymentPlanPage({ params }: Params) {
           installments: plan.installments.map((i) => ({
             percentage: Number(i.percentage),
             triggerType: i.triggerType,
+            triggerStageId: i.triggerStageId,
           })),
         }}
       />

@@ -1,0 +1,94 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+
+    services:
+      # Migrations are checked by applying them to a genuinely empty database,
+      # which is the only way to catch a migration that works against a
+      # developer's already-migrated local DB but not against a fresh one.
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: leapin_ci
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/leapin_ci
+      # Placeholders only — nothing here talks to a real Moyasar or Postmark
+      # account. They exist because src/lib/env.ts refuses to boot without
+      # them under NODE_ENV=production, which `next build` sets.
+      AUTH_SECRET: ci-placeholder-secret-value-not-a-real-secret
+      AUTH_URL: http://localhost:3000
+      MOYASAR_SECRET_KEY: sk_test_ci_placeholder
+      MOYASAR_WEBHOOK_SECRET: ci_placeholder_webhook_secret
+      POSTMARK_SERVER_TOKEN: ci-placeholder-token
+      POSTMARK_FROM_EMAIL: ci@example.com
+      POSTMARK_WEBHOOK_USERNAME: ci-user
+      POSTMARK_WEBHOOK_PASSWORD: ci-pass
+      BANK_TRANSFER_BANK_NAME: CI Bank
+      BANK_TRANSFER_ACCOUNT_NAME: CI Account
+      BANK_TRANSFER_IBAN: SA0000000000000000000000
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      # --frozen-lockfile makes a lockfile that drifted from package.json a CI
+      # failure rather than something CI quietly papers over.
+      - run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm exec prisma generate
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      # Zero tolerance: the config marks genuinely-intentional unused args with
+      # a leading underscore, so any remaining warning is a real finding.
+      - name: Lint
+        run: pnpm exec eslint . --max-warnings=0
+
+      - name: Test
+        run: pnpm test
+
+      - name: Apply migrations to an empty database
+        run: pnpm exec prisma migrate deploy
+
+      # Catches the case where schema.prisma has drifted ahead of the
+      # migrations — the app would then expect columns no deployment has.
+      - name: Check schema matches migrations
+        run: |
+          pnpm exec prisma migrate diff \
+            --from-config-datasource \
+            --to-schema=prisma/schema.prisma \
+            --exit-code \
+          && echo "Schema and migrations agree."
+
+      - name: Build
+        run: pnpm build
+        env:
+          NODE_ENV: production

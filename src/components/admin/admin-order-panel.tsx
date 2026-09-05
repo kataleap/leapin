@@ -22,6 +22,24 @@ type DocumentItem = {
   isVisibleToClient: boolean;
 };
 type TradeName = { id: string; nameAr: string; batchNumber: number; priorityRank: number; status: string };
+type OrderPaymentItem = {
+  id: string;
+  installmentNumber: number;
+  amount: number;
+  status: string;
+  method: string | null;
+  dueAt: Date | null;
+  gatewayReference: string | null;
+  proofOriginalFileName: string | null;
+};
+type NotificationLogItem = {
+  id: string;
+  channel: string;
+  eventType: string;
+  status: string;
+  errorMessage: string | null;
+  sentAt: Date;
+};
 
 const STAGE_STATUS_OPTIONS = [
   "not_started",
@@ -42,6 +60,8 @@ export function AdminOrderPanel({
   initialStages,
   initialDocuments,
   initialTradeNames,
+  initialOrderPayments,
+  initialNotificationLogs,
 }: {
   orderId: string;
   isSuperAdmin: boolean;
@@ -49,11 +69,15 @@ export function AdminOrderPanel({
   initialStages: OrderStage[];
   initialDocuments: DocumentItem[];
   initialTradeNames: TradeName[];
+  initialOrderPayments: OrderPaymentItem[];
+  initialNotificationLogs: NotificationLogItem[];
 }) {
   const router = useRouter();
   const [stages, setStages] = useState(initialStages);
   const [documents, setDocuments] = useState(initialDocuments);
   const [tradeNames, setTradeNames] = useState(initialTradeNames);
+  const [orderPayments, setOrderPayments] = useState(initialOrderPayments);
+  const [notificationLogs, setNotificationLogs] = useState(initialNotificationLogs);
   const [error, setError] = useState<string | null>(null);
 
   async function updateStage(stageEntry: OrderStage, patch: Record<string, unknown>) {
@@ -125,6 +149,15 @@ export function AdminOrderPanel({
         </CardContent>
       </Card>
 
+      <PaymentsCard
+        orderId={orderId}
+        payments={orderPayments}
+        onUpdated={(p) => setOrderPayments((prev) => prev.map((x) => (x.id === p.id ? p : x)))}
+      />
+      <NotificationsCard
+        logs={notificationLogs}
+        onUpdated={(log) => setNotificationLogs((prev) => prev.map((x) => (x.id === log.id ? log : x)))}
+      />
       <DocumentUploadCard orderId={orderId} documents={documents} onUploaded={(d) => setDocuments((p) => [...p, d])} />
       <TradeNamesCard
         orderId={orderId}
@@ -136,6 +169,231 @@ export function AdminOrderPanel({
       />
       <OtpRequestCard orderId={orderId} />
     </div>
+  );
+}
+
+const PAYMENT_METHOD_LABEL: Record<string, string> = {
+  online: "الكتروني",
+  bank_transfer: "تحويل بنكي",
+  cash: "كاش",
+};
+
+const PAYMENT_STATUS_LABEL: Record<string, string> = {
+  pending: "مستحقة",
+  paid: "مدفوعة",
+  failed: "فشلت",
+  refunded: "مُستردة",
+};
+
+function PaymentsCard({
+  orderId,
+  payments,
+  onUpdated,
+}: {
+  orderId: string;
+  payments: OrderPaymentItem[];
+  onUpdated: (payment: OrderPaymentItem) => void;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  async function runAction(
+    payment: OrderPaymentItem,
+    method: "POST" | "PUT",
+    url: string,
+    body?: Record<string, unknown>
+  ) {
+    setError(null);
+    setBusyId(payment.id);
+    try {
+      const res = await fetch(url, {
+        method,
+        headers: body ? { "Content-Type": "application/json" } : undefined,
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setError(data?.error ?? "تعذّرت العملية.");
+        return;
+      }
+      if (data?.orderPayment) onUpdated(data.orderPayment);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  if (payments.length === 0) return null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>المدفوعات</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {payments.map((p) => (
+          <div key={p.id} className="space-y-2 rounded-lg border p-3 text-sm">
+            <div className="flex items-center justify-between">
+              <span>
+                الدفعة {p.installmentNumber} — {p.amount.toLocaleString("ar-SA")} ريال
+              </span>
+              <Badge variant={p.status === "paid" ? "default" : p.status === "failed" ? "destructive" : "outline"}>
+                {PAYMENT_STATUS_LABEL[p.status] ?? p.status}
+              </Badge>
+            </div>
+            <div className="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+              {p.method && <span>الطريقة: {PAYMENT_METHOD_LABEL[p.method] ?? p.method}</span>}
+              {p.dueAt && <span>مستحقة منذ: {new Date(p.dueAt).toLocaleDateString("ar-SA")}</span>}
+              {p.gatewayReference && <span>مرجع البوابة: {p.gatewayReference}</span>}
+              {p.proofOriginalFileName && (
+                <a
+                  href={`/api/orders/${orderId}/payments/${p.installmentNumber}/proof`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary underline"
+                >
+                  عرض الإيصال
+                </a>
+              )}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {p.dueAt && p.status === "pending" && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={busyId === p.id}
+                  onClick={() => runAction(p, "POST", `/api/orders/${orderId}/payments/${p.installmentNumber}/checkout`)}
+                >
+                  إعادة إرسال رابط الدفع
+                </Button>
+              )}
+              {p.method === "bank_transfer" && p.proofOriginalFileName && p.status === "pending" && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={busyId === p.id}
+                  onClick={() => runAction(p, "POST", `/api/admin/payments/${p.id}/confirm`, { method: "bank_transfer" })}
+                >
+                  تأكيد استلام التحويل
+                </Button>
+              )}
+              {p.dueAt && p.status === "pending" && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={busyId === p.id}
+                  onClick={() => runAction(p, "POST", `/api/admin/payments/${p.id}/confirm`, { method: "cash" })}
+                >
+                  تسجيل دفعة كاش
+                </Button>
+              )}
+              {p.method === "online" && p.gatewayReference && p.status === "pending" && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={busyId === p.id}
+                  onClick={() => runAction(p, "POST", `/api/admin/payments/${p.id}/sync`)}
+                >
+                  مزامنة الحالة
+                </Button>
+              )}
+              {p.status === "paid" && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="destructive"
+                  disabled={busyId === p.id}
+                  onClick={() => {
+                    if (confirm("تسجيل استرجاع لهذه الدفعة؟")) {
+                      runAction(p, "PUT", `/api/admin/payments/${p.id}`, { status: "refunded" });
+                    }
+                  }}
+                >
+                  تسجيل استرجاع
+                </Button>
+              )}
+            </div>
+          </div>
+        ))}
+        {error && <p className="text-destructive text-sm" role="alert">{error}</p>}
+      </CardContent>
+    </Card>
+  );
+}
+
+const NOTIFICATION_EVENT_LABEL: Record<string, string> = {
+  stage_completed: "اكتمال مرحلة",
+  waiting_on_client: "بانتظار إجراء العميل",
+  payment_due: "استحقاق دفعة",
+};
+
+const NOTIFICATION_STATUS_LABEL: Record<string, string> = {
+  sent: "أُرسلت",
+  failed: "فشلت",
+  bounced: "مرتدة",
+};
+
+function NotificationsCard({
+  logs,
+  onUpdated,
+}: {
+  logs: NotificationLogItem[];
+  onUpdated: (log: NotificationLogItem) => void;
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  async function resend(log: NotificationLogItem) {
+    setError(null);
+    setBusyId(log.id);
+    try {
+      const res = await fetch(`/api/admin/notifications/${log.id}/resend`, { method: "POST" });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setError(data?.error ?? "تعذّرت إعادة الإرسال.");
+        return;
+      }
+      if (data?.notificationLog) onUpdated(data.notificationLog);
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  if (logs.length === 0) return null;
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>سجل الإشعارات الخارجية</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {logs.map((log) => (
+          <div key={log.id} className="flex items-center justify-between gap-3 rounded-lg border p-3 text-sm">
+            <div className="flex flex-col gap-1">
+              <span>{NOTIFICATION_EVENT_LABEL[log.eventType] ?? log.eventType} — بريد إلكتروني</span>
+              <span className="text-muted-foreground text-xs">
+                {new Date(log.sentAt).toLocaleString("ar-SA")}
+                {log.errorMessage ? ` — ${log.errorMessage}` : ""}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Badge variant={log.status === "sent" ? "default" : "destructive"}>
+                {NOTIFICATION_STATUS_LABEL[log.status] ?? log.status}
+              </Badge>
+              {log.status === "failed" && (
+                <Button type="button" size="sm" variant="outline" disabled={busyId === log.id} onClick={() => resend(log)}>
+                  إعادة إرسال
+                </Button>
+              )}
+            </div>
+          </div>
+        ))}
+        {error && <p className="text-destructive text-sm" role="alert">{error}</p>}
+      </CardContent>
+    </Card>
   );
 }
 

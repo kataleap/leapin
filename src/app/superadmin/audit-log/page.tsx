@@ -1,8 +1,12 @@
 import { prisma } from "@/lib/prisma";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { requirePageRole } from "@/lib/auth/require-page-role";
+import { UserRole } from "@/generated/prisma/enums";
 
 export default async function AuditLogPage() {
+  await requirePageRole([UserRole.super_admin]);
+
   const entries = await prisma.auditLog.findMany({
     take: 100,
     orderBy: { createdAt: "desc" },

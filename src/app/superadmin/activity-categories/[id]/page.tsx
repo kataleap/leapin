@@ -1,10 +1,14 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { ActivityCategoryForm } from "@/components/superadmin/activity-category-form";
+import { requirePageRole } from "@/lib/auth/require-page-role";
+import { UserRole } from "@/generated/prisma/enums";
 
 type Params = { params: Promise<{ id: string }> };
 
 export default async function EditActivityCategoryPage({ params }: Params) {
+  await requirePageRole([UserRole.super_admin]);
+
   const { id } = await params;
   const category = await prisma.activityCategory.findUnique({ where: { id } });
   if (!category) notFound();

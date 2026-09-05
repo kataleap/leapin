@@ -1,14 +1,13 @@
-import { notFound, redirect } from "next/navigation";
-import { auth } from "@/auth";
+import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { UserRole } from "@/generated/prisma/enums";
+import { requirePageRole } from "@/lib/auth/require-page-role";
 import { AdminOrderPanel } from "@/components/admin/admin-order-panel";
 
 type Params = { params: Promise<{ id: string }> };
 
 export default async function AdminOrderDetailPage({ params }: Params) {
-  const session = await auth();
-  if (!session?.user) redirect("/login");
+  const session = await requirePageRole([UserRole.admin, UserRole.super_admin]);
 
   const { id } = await params;
   const order = await prisma.order.findUnique({
@@ -19,6 +18,8 @@ export default async function AdminOrderDetailPage({ params }: Params) {
       orderStages: { include: { stage: true }, orderBy: { stage: { sequenceOrder: "asc" } } },
       documents: true,
       tradeNames: { orderBy: [{ batchNumber: "asc" }, { priorityRank: "asc" }] },
+      orderPayments: { orderBy: { installmentNumber: "asc" } },
+      notificationLogs: { orderBy: { sentAt: "desc" } },
     },
   });
   if (!order) notFound();
@@ -45,6 +46,8 @@ export default async function AdminOrderDetailPage({ params }: Params) {
         initialStages={order.orderStages}
         initialDocuments={order.documents}
         initialTradeNames={order.tradeNames}
+        initialOrderPayments={order.orderPayments.map((p) => ({ ...p, amount: Number(p.amount) }))}
+        initialNotificationLogs={order.notificationLogs}
       />
     </div>
   );

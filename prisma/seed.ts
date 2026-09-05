@@ -13,6 +13,7 @@ import "dotenv/config";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../src/generated/prisma/client";
 import { hashPassword } from "../src/lib/auth/password";
+import { SYSTEM_USER_EMAIL } from "../src/lib/system-user";
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
 const prisma = new PrismaClient({ adapter });
@@ -20,6 +21,16 @@ const prisma = new PrismaClient({ adapter });
 // ⚠️ LOCAL DEV ONLY — hardcoded weak password for manual RBAC testing.
 // Never seed these into a staging/production database.
 const DEV_PASSWORD = "DevPassw0rd!";
+
+async function seedSystemUser() {
+  await prisma.user.upsert({
+    where: { email: SYSTEM_USER_EMAIL },
+    update: {},
+    create: { email: SYSTEM_USER_EMAIL, name: "System", role: "super_admin", isActive: true },
+  });
+  console.log("Seeded system user for webhook-triggered audit entries.");
+}
+
 
 async function seedTestUsers() {
   const passwordHash = await hashPassword(DEV_PASSWORD);
@@ -140,6 +151,7 @@ async function main() {
   });
 
   await seedActivityClassification(regularTrack.id);
+  await seedSystemUser();
   await seedTestUsers();
 
   console.log("Seed complete (placeholder data — do not treat as approved).", {

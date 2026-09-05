@@ -1,10 +1,14 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { PackageForm } from "@/components/superadmin/package-form";
+import { requirePageRole } from "@/lib/auth/require-page-role";
+import { UserRole } from "@/generated/prisma/enums";
 
 type Params = { params: Promise<{ id: string }> };
 
 export default async function EditPackagePage({ params }: Params) {
+  await requirePageRole([UserRole.super_admin]);
+
   const { id } = await params;
   const pkg = await prisma.package.findUnique({
     where: { id },

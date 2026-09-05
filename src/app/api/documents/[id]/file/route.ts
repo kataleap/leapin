@@ -2,9 +2,14 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { UserRole } from "@/generated/prisma/enums";
 import { requireAuth } from "@/lib/auth/guards";
-import { readStoredFile } from "@/lib/storage/documents";
+import { canStaffAccessOrder } from "@/lib/orders/assignment";
+import { privateFileResponse, readStoredFile } from "@/lib/storage/documents";
 
 type Params = { params: Promise<{ id: string }> };
+
+// Per-user private bytes on a fixed URL — never let this response be cached
+// and replayed to whoever requests the same path next.
+export const dynamic = "force-dynamic";
 
 // Protected file serving — never expose documents_vault files via a public
 // URL. RBAC here mirrors src/lib/orders/get-order-for-viewer.ts: super_admin
@@ -26,22 +31,13 @@ export async function GET(_request: Request, { params }: Params) {
     if (!document.isVisibleToClient || document.order.clientId !== userId) {
       return NextResponse.json({ error: "Forbidden." }, { status: 403 });
     }
-  } else if (role === UserRole.admin) {
-    const isAssigned = await prisma.orderStage.findFirst({
-      where: { orderId: document.orderId, assignedAdminId: userId },
-    });
-    if (!isAssigned) {
-      return NextResponse.json({ error: "Forbidden." }, { status: 403 });
-    }
+  } else if (!(await canStaffAccessOrder(document.orderId, session))) {
+    return NextResponse.json({ error: "Forbidden." }, { status: 403 });
   }
-  // super_admin: no further check.
 
   const buffer = await readStoredFile(document.storagePath);
-  return new NextResponse(new Uint8Array(buffer), {
-    headers: {
-      "Content-Type": document.mimeType,
-      "Content-Disposition": `inline; filename="${encodeURIComponent(document.originalFileName)}"`,
-      "Content-Length": String(document.fileSizeBytes),
-    },
+  return privateFileResponse(buffer, {
+    mimeType: document.mimeType,
+    fileName: document.originalFileName,
   });
 }

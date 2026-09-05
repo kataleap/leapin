@@ -3,6 +3,8 @@ import { prisma } from "@/lib/prisma";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { requirePageRole } from "@/lib/auth/require-page-role";
+import { UserRole } from "@/generated/prisma/enums";
 
 const ROLE_LABEL: Record<string, string> = {
   client: "عميل",
@@ -11,6 +13,8 @@ const ROLE_LABEL: Record<string, string> = {
 };
 
 export default async function UsersListPage() {
+  await requirePageRole([UserRole.super_admin]);
+
   const users = await prisma.user.findMany({
     select: { id: true, name: true, email: true, role: true, isActive: true },
     orderBy: { createdAt: "desc" },

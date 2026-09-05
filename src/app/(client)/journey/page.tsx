@@ -200,7 +200,9 @@ export default function JourneyPage() {
     if (!trackId || !packageId) return;
     setSubmitting(true);
     setSubmitError(null);
-    const { ok, data, error } = await getJson<{ order: { id: string } }>("/api/orders", {
+    const { ok, data, error } = await getJson<{
+      order: { id: string; orderPayments: { dueAt: string | null; status: string }[] };
+    }>("/api/orders", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -213,7 +215,13 @@ export default function JourneyPage() {
     });
     setSubmitting(false);
     if (ok && data) {
-      router.push(`/orders/${data.order.id}`);
+      // Phase 3: an on_registration installment (auto-activated at order
+      // creation) sends the client straight to "مدفوعاتي" to choose how
+      // to pay; otherwise fall back to the order detail page as before.
+      const hasPayableInstallment = data.order.orderPayments.some(
+        (p) => p.dueAt != null && p.status === "pending"
+      );
+      router.push(hasPayableInstallment ? "/payments" : `/orders/${data.order.id}`);
     } else {
       setSubmitError(error ?? "Could not create the order.");
     }
