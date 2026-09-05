@@ -2,7 +2,6 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { UserRole } from "@/generated/prisma/enums";
 import { requirePageRole } from "@/lib/auth/require-page-role";
-import { SignOutButton } from "@/components/auth/sign-out-button";
 import { Card, CardHeader, CardTitle, CardDescription, CardAction } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 
@@ -20,14 +19,11 @@ export default async function AdminHomePage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold">لوحة الأدمن</h1>
-          <p className="text-muted-foreground mt-1 text-sm">
-            {session.user.role === UserRole.admin ? "الطلبات المُسندة إليك" : "جميع الطلبات"}
-          </p>
-        </div>
-        <SignOutButton />
+      <div>
+        <h1 className="text-2xl font-semibold">لوحة الأدمن</h1>
+        <p className="text-muted-foreground mt-1 text-sm">
+          {session.user.role === UserRole.admin ? "الطلبات المُسندة إليك" : "جميع الطلبات"}
+        </p>
       </div>
 
       {orders.length === 0 ? (

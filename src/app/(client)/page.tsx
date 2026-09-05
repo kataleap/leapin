@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { auth } from "@/auth";
-import { SignOutButton } from "@/components/auth/sign-out-button";
 import { UserRole } from "@/generated/prisma/enums";
 import { Button } from "@/components/ui/button";
 
@@ -48,7 +47,6 @@ export default async function Home() {
               />
             )}
           </div>
-          <SignOutButton />
         </div>
       ) : (
         <div className="flex gap-3">

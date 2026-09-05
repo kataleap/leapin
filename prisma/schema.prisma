@@ -152,6 +152,15 @@ enum OtpStatus {
   expired
 }
 
+// Phase 5 login-OTP purpose. Deliberately named/mapped distinctly from
+// OtpRequest/OtpStatus above — those model an unrelated feature (an admin
+// relaying a government-portal OTP via WhatsApp during order processing),
+// not phone/login verification.
+enum LoginOtpPurpose {
+  login
+  phone_change
+}
+
 // Not part of the source doc's section 5 tables — doc §10.2 only describes
 // the requirement in prose ("notifications to the client on any stage status
 // change, and to admins on a new order or an action awaiting them"). This
@@ -424,9 +433,23 @@ model User {
   image             String?          @map("image_url") // required by the Auth.js adapter type shape — not in source doc
   passwordHash      String?          @map("password_hash") // for credentials-based login; null if OAuth-only
   phone             String?
+  // Phase 5: null means this account has never completed the mandatory
+  // first-login OTP flow (or its phone changed and hasn't been
+  // re-verified yet) — see LoginOtpCode. Doubles as the "first login"
+  // gate so no separate boolean flag is needed.
+  phoneVerifiedAt   DateTime?        @map("phone_verified_at")
+  // Phase 5: staged new phone number awaiting OTP re-verification via a
+  // LoginOtpCode row with purpose=phone_change. `phone` stays authoritative
+  // until that challenge is verified.
+  pendingPhone      String?          @map("pending_phone")
   nationality       String?
   residencyStatus   ResidencyStatus? @map("residency_status")
   nationalIdOrIqama String?          @map("national_id_or_iqama")
+  // Phase 5: client-only profile address fields (doc §3.1 — country/city/
+  // postal code only, no street/building details).
+  addressCountry    String?          @map("address_country")
+  addressCity       String?          @map("address_city")
+  addressPostalCode String?          @map("address_postal_code")
   isActive          Boolean          @default(true) @map("is_active")
   createdAt         DateTime         @default(now()) @map("created_at")
 
@@ -441,6 +464,7 @@ model User {
   packagesCreated      Package[]       @relation("PackagesCreatedByUser")
   auditLogsAsActor     AuditLog[]      @relation("AuditLogActor")
   notifications        Notification[]  @relation("NotificationRecipient")
+  loginOtpCodes        LoginOtpCode[]
 
   @@map("users")
 }
@@ -677,6 +701,26 @@ model OtpRequest {
 
   @@index([orderId])
   @@map("otp_requests")
+}
+
+// Phase 5: one-time codes for login (mandatory first-login verification and
+// the always-available "log in via OTP instead of password" path) and for
+// re-verifying a new phone number before a profile edit takes effect. Not
+// related to OtpRequest above.
+model LoginOtpCode {
+  id         String          @id @default(uuid()) @db.Uuid
+  userId     String          @map("user_id") @db.Uuid
+  user       User            @relation(fields: [userId], references: [id])
+  purpose    LoginOtpPurpose
+  codeHash   String          @map("code_hash")
+  newPhone   String?         @map("new_phone") // set only when purpose = phone_change
+  attempts   Int             @default(0)
+  expiresAt  DateTime        @map("expires_at")
+  consumedAt DateTime?       @map("consumed_at")
+  createdAt  DateTime        @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("login_otp_codes")
 }
 
 model IncubatorApproval {

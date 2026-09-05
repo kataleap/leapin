@@ -35,15 +35,28 @@ async function seedSystemUser() {
 async function seedTestUsers() {
   const passwordHash = await hashPassword(DEV_PASSWORD);
   const users = [
-    { email: "client@leapin.test", name: "Test Client", role: "client" as const },
-    { email: "admin@leapin.test", name: "Test Admin", role: "admin" as const },
-    { email: "superadmin@leapin.test", name: "Test Super Admin", role: "super_admin" as const },
+    { email: "client@leapin.test", name: "Test Client", role: "client" as const, phone: "+966500000001" },
+    { email: "admin@leapin.test", name: "Test Admin", role: "admin" as const, phone: "+966500000002" },
+    {
+      email: "superadmin@leapin.test",
+      name: "Test Super Admin",
+      role: "super_admin" as const,
+      phone: "+966500000003",
+    },
   ];
   for (const u of users) {
     await prisma.user.upsert({
       where: { email: u.email },
-      update: {},
-      create: { ...u, passwordHash, isActive: true },
+      // Phase 5: backfill phone/phoneVerifiedAt onto pre-existing seeded rows
+      // too, not just on first create — otherwise a DB seeded before this
+      // phase keeps phoneVerifiedAt=null and these dev accounts get stuck
+      // behind the mandatory first-login OTP wall on every reseed.
+      update: { phone: u.phone, phoneVerifiedAt: new Date() },
+      // Phase 5: pre-verified so these dev accounts can still log in with
+      // just the password — otherwise every fresh `db:seed` run would
+      // require completing the mandatory first-login OTP flow (reading the
+      // code from server console output) before any of them are usable.
+      create: { ...u, passwordHash, isActive: true, phoneVerifiedAt: new Date() },
     });
   }
   console.log(`Seeded 3 dev-only test users (password: "${DEV_PASSWORD}").`);

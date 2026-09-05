@@ -33,12 +33,12 @@ export async function POST(request: Request) {
       { status: 400 }
     );
   }
-  const { name, email, password, role } = parsed.data;
+  const { name, email, phone, password, role } = parsed.data;
   const passwordHash = await hashPassword(password);
 
   try {
     const user = await prisma.user.create({
-      data: { name, email, passwordHash, role, isActive: true },
+      data: { name, email, phone, passwordHash, role, isActive: true },
       select: SAFE_SELECT,
     });
     await logAudit({

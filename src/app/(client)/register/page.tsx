@@ -3,23 +3,16 @@
 import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { signIn, getSession } from "next-auth/react";
-import type { UserRole } from "@/generated/prisma/enums";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 
-const ROLE_HOME: Record<UserRole, string> = {
-  client: "/",
-  admin: "/admin",
-  super_admin: "/superadmin",
-};
-
 export default function RegisterPage() {
   const router = useRouter();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -37,7 +30,7 @@ export default function RegisterPage() {
       const res = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, email, password, confirmPassword }),
+        body: JSON.stringify({ name, email, phone, password, confirmPassword }),
       });
 
       if (res.status === 409) {
@@ -49,19 +42,11 @@ export default function RegisterPage() {
         return;
       }
 
-      const result = await signIn("credentials", {
-        email,
-        password,
-        redirect: false,
-      });
-      if (!result || !result.ok) {
-        setError("تم إنشاء الحساب، لكن تعذّر تسجيل الدخول تلقائيًا — جرّب تسجيل الدخول يدويًا.");
-        return;
-      }
-      const session = await getSession();
-      const role = session?.user?.role as UserRole | undefined;
-      router.push(role ? ROLE_HOME[role] : "/");
-      router.refresh();
+      // A fresh account has never completed the mandatory first-login OTP
+      // step, so auto-signing-in here would immediately hit that wall —
+      // land on /login (with the email prefilled) and let its two-step
+      // flow handle it instead of duplicating that logic here.
+      router.push(`/login?email=${encodeURIComponent(email)}`);
     } finally {
       setSubmitting(false);
     }
@@ -87,6 +72,16 @@ export default function RegisterPage() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="phone">رقم الهاتف</Label>
+              <Input
+                id="phone"
+                type="tel"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
                 required
               />
             </div>

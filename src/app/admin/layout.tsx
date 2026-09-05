@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { NotificationBell } from "@/components/notifications/notification-bell";
+import { AccountMenu } from "@/components/account/account-menu";
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -8,7 +9,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         <Link href="/admin" className="text-muted-foreground hover:text-foreground text-sm">
           طلباتي
         </Link>
-        <NotificationBell />
+        <div className="flex items-center gap-2">
+          <NotificationBell />
+          <AccountMenu profileHref="/admin/profile" />
+        </div>
       </nav>
       {children}
     </div>

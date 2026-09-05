@@ -32,6 +32,7 @@ export function UserForm({
 }) {
   const router = useRouter();
   const [values, setValues] = useState<UserFormValues>({ ...DEFAULTS, ...initial });
+  const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -49,7 +50,7 @@ export function UserForm({
       const url = mode === "create" ? "/api/superadmin/users" : `/api/superadmin/users/${userId}`;
       const body =
         mode === "create"
-          ? { ...values, password }
+          ? { ...values, phone, password }
           : { name: values.name, role: values.role, isActive: values.isActive, ...(password ? { password } : {}) };
       const res = await fetch(url, {
         method: mode === "create" ? "POST" : "PUT",
@@ -104,6 +105,13 @@ export function UserForm({
           required
         />
       </div>
+
+      {mode === "create" && (
+        <div className="space-y-1.5">
+          <Label htmlFor="phone">رقم الهاتف</Label>
+          <Input id="phone" type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} required />
+        </div>
+      )}
 
       <div className="space-y-1.5">
         <Label htmlFor="password">

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { auth } from "@/auth";
 import { NotificationBell } from "@/components/notifications/notification-bell";
+import { AccountMenu } from "@/components/account/account-menu";
 
 export default async function ClientLayout({
   children,
@@ -23,6 +24,7 @@ export default async function ClientLayout({
             مدفوعاتي
           </Link>
           <NotificationBell />
+          <AccountMenu profileHref="/profile" />
         </header>
       )}
       {children}

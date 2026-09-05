@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { NotificationBell } from "@/components/notifications/notification-bell";
+import { AccountMenu } from "@/components/account/account-menu";
 
 const NAV = [
   { href: "/superadmin", label: "الرئيسية" },
@@ -26,7 +27,10 @@ export default function SuperAdminLayout({ children }: { children: React.ReactNo
             </Link>
           ))}
         </div>
-        <NotificationBell />
+        <div className="flex items-center gap-2">
+          <NotificationBell />
+          <AccountMenu profileHref="/superadmin/profile" />
+        </div>
       </nav>
       {children}
     </div>
