@@ -104,7 +104,18 @@
       "Bash(npx tsx *)",
       "Bash(lsof -ti:3000)",
       "Bash(xargs kill -9)",
-      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/login)"
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/login)",
+      "Bash(lsof -ti:3000 -sTCP:LISTEN)",
+      "Bash(ps -p 13384 -o pid,command)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:3000/profile)",
+      "Bash(curl -s -X POST http://localhost:3000/api/auth/login/password-check -H 'Content-Type: application/json' -d '{\"email\":\"client@leapin.test\",\"password\":\"DevPassw0rd!\"}')",
+      "Bash(ps -o pid,lstart,command -p 13384)",
+      "Bash(xargs -r kill)",
+      "Bash(nohup npm run dev)",
+      "Bash(disown)",
+      "Bash(timeout 60 bash -c 'until curl -sf http://localhost:3000 >/dev/null; do sleep 1; done')",
+      "Bash(curl -s -X POST http://localhost:3000/api/auth/login/password-check -H 'Content-Type: application/json' -d '{\"email\":\"phase5test5821@example.com\",\"password\":\"TestPassw0rd!\"}' -w '\\\\nHTTP:%{http_code}\\\\n')",
+      "Bash(tail -60 /tmp/leapin-dev.log)"
     ],
     "additionalDirectories": [
       "/Users/ia-imad/Documents/Github/Leapin/leapin/src/app/api/auth",
