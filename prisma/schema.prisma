@@ -131,6 +131,8 @@ enum ForeignSetupStatus {
 }
 
 enum DocumentType {
+  // Phase 5 — the sponsor's no-objection letter (non_objection_letters).
+  non_objection_letter
   misa_license
   commercial_register
   incorporation_contract
@@ -172,6 +174,13 @@ enum NotificationType {
   stage_status_changed
   payment_due
   payment_received
+  // Phase 5 — the order-level completion moment, distinct from the
+  // stage-level stage_status_changed that fires on every stage transition.
+  order_completed
+  // Phase 5 — a client submitting something into an order (a document, a
+  // trade-name batch). Staff-facing: it is the "an action awaits you" half of
+  // doc §10.2, and it must route to the admin view, not the client one.
+  client_submission
 }
 
 // Phase 3 addition — which of the (currently) three ways a client's
@@ -206,6 +215,18 @@ enum NotificationLogStatus {
 // poa_status / idea_study_status / letter_status / non_objection_letters.status.
 // Kept as one shared minimal enum rather than inventing four distinct business
 // meanings. Split into real per-field enums once those lifecycles are confirmed.
+// Phase 5 — the sponsor's no-objection letter, now that its lifecycle is
+// confirmed: required for a non-Saudi resident inside Saudi Arabia, issued by
+// their employer (the sponsor), uploaded by the client, reviewed by our team.
+// This is the first of the four PLACEHOLDER lifecycles below to be settled;
+// the other three still await their own definitions.
+enum NonObjectionLetterStatus {
+  not_submitted
+  under_review
+  approved
+  rejected
+}
+
 enum PlaceholderStatus {
   pending
   in_progress
@@ -459,6 +480,8 @@ model User {
   ordersAsClient       Order[]         @relation("OrderClient")
   orderStagesAssigned  OrderStage[]    @relation("OrderStageAssignedAdmin")
   documentsUploaded    DocumentVault[] @relation("DocumentsUploadedByAdmin")
+  documentsSubmitted   DocumentVault[] @relation("DocumentsUploadedByClient")
+  nolReviewed          NonObjectionLetter[] @relation("NonObjectionLetterReviewer")
   otpRequestsRequested OtpRequest[]    @relation("OtpRequestedByAdmin")
   activitiesSynced     Activity[]      @relation("ActivitiesSyncedByAdmin")
   packagesCreated      Package[]       @relation("PackagesCreatedByUser")
@@ -546,6 +569,12 @@ model Order {
   paymentPlanId       String?           @map("payment_plan_id") @db.Uuid
   paymentPlan         PaymentPlan?      @relation(fields: [paymentPlanId], references: [id])
   status              OrderStatus       @default(draft)
+  // A short, human reference. The UUID primary key is unquotable over the
+  // phone and unreadable in an email subject, so the client saw an id nobody
+  // could use to talk about their own order. Filled by a Postgres sequence,
+  // never by the application — two orders created in the same millisecond
+  // must not be able to claim the same number.
+  orderNumber         Int               @unique @default(autoincrement()) @map("order_number")
   totalPrice          Decimal?          @map("total_price") @db.Decimal(12, 2)
   createdAt           DateTime          @default(now()) @map("created_at")
   updatedAt           DateTime          @updatedAt @map("updated_at")
@@ -677,10 +706,22 @@ model DocumentVault {
   originalFileName  String       @map("original_file_name")
   mimeType          String       @map("mime_type")
   fileSizeBytes     Int          @map("file_size_bytes")
-  uploadedByAdminId String       @map("uploaded_by_admin_id") @db.Uuid
-  uploadedByAdmin   User         @relation("DocumentsUploadedByAdmin", fields: [uploadedByAdminId], references: [id])
+  // Phase 5: the vault now has two sources, not one. It was built for
+  // admin-issued deliverables (a MISA licence, a commercial register), so the
+  // uploader column was a required admin id; §4.2 of the phase-2 scope also
+  // requires client-supplied documents (attested foreign-company papers,
+  // financial statements), which have no admin uploader at all. Both columns
+  // are nullable with a CHECK enforcing exactly one — a document always has
+  // precisely one uploader, and which side they were on is a fact worth
+  // keeping rather than inferring from a user's role, which can change later.
+  uploadedByAdminId  String?      @map("uploaded_by_admin_id") @db.Uuid
+  uploadedByAdmin    User?        @relation("DocumentsUploadedByAdmin", fields: [uploadedByAdminId], references: [id])
+  uploadedByClientId String?      @map("uploaded_by_client_id") @db.Uuid
+  uploadedByClient   User?        @relation("DocumentsUploadedByClient", fields: [uploadedByClientId], references: [id])
   isVisibleToClient Boolean      @default(false) @map("is_visible_to_client") // default not specified in doc — defaults hidden until an admin reveals it
   uploadedAt        DateTime     @default(now()) @map("uploaded_at")
+
+  nonObjectionLetter NonObjectionLetter?
 
   @@index([orderId])
   @@map("documents_vault")
@@ -751,14 +792,31 @@ model PartnersDecisionForm {
 }
 
 model NonObjectionLetter {
-  id         String            @id @default(uuid()) @db.Uuid
-  orderId    String            @map("order_id") @db.Uuid
-  order      Order             @relation(fields: [orderId], references: [id])
-  isRequired Boolean           @map("is_required") // true only for a non-Saudi resident living inside Saudi Arabia
-  status     PlaceholderStatus // PLACEHOLDER enum — see note above
-  fileUrl    String?           @map("file_url")
+  id      String @id @default(uuid()) @db.Uuid
+  orderId String @map("order_id") @db.Uuid
+  order   Order  @relation(fields: [orderId], references: [id])
+  // Decided once, at order creation, from the client's residency and
+  // nationality — and then frozen. A client who changes their residency
+  // afterwards must not silently change what an in-flight order requires.
+  isRequired Boolean                  @map("is_required")
+  status     NonObjectionLetterStatus @default(not_submitted)
 
-  @@index([orderId])
+  // Phase 2 §4 replaced pasted URLs with real uploads everywhere; this table
+  // still carried the old `file_url` because nothing ever wrote to it. The
+  // letter now points at a documents_vault row, so it is served through the
+  // same RBAC-checked route as every other file and never from a public URL.
+  documentId String?        @unique @map("document_id") @db.Uuid
+  document   DocumentVault? @relation(fields: [documentId], references: [id])
+
+  submittedAt       DateTime? @map("submitted_at")
+  reviewedAt        DateTime? @map("reviewed_at")
+  reviewedByAdminId String?   @map("reviewed_by_admin_id") @db.Uuid
+  reviewedByAdmin   User?     @relation("NonObjectionLetterReviewer", fields: [reviewedByAdminId], references: [id])
+  reviewNote        String?   @map("review_note")
+
+  // One letter per order: the requirement is a property of the order, and a
+  // rejected letter is replaced in place rather than stacked.
+  @@unique([orderId])
   @@map("non_objection_letters")
 }
 

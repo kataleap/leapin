@@ -1,17 +1,27 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// These three are the module's only side-effecting dependencies. Mocking them
-// keeps the suite about the decision logic — which transitions are allowed —
-// with no database in the loop.
+// These are the module's only side-effecting dependencies. Mocking them keeps
+// the suite about the decision logic — which transitions are allowed — with no
+// database in the loop.
 const findUnique = vi.fn();
 const update = vi.fn();
 const logAudit = vi.fn();
 const createNotification = vi.fn();
+const recomputeOrderStatus = vi.fn();
 
 vi.mock("@/lib/prisma", () => ({
   prisma: { orderPayment: { findUnique: (...a: unknown[]) => findUnique(...a), update: (...a: unknown[]) => update(...a) } },
 }));
 vi.mock("@/lib/audit", () => ({ logAudit: (...a: unknown[]) => logAudit(...a) }));
+// The order's own status is derived elsewhere (and tested there); here we only
+// care that settling a payment triggers that recomputation.
+vi.mock("@/lib/orders/order-status", () => ({
+  recomputeOrderStatus: (...a: unknown[]) => {
+    recomputeOrderStatus(...a);
+    return Promise.resolve({ changed: false, status: "in_progress", previousStatus: "in_progress", clientId: "client-1" });
+  },
+  notifyOrderStatusChange: () => Promise.resolve(),
+}));
 vi.mock("@/lib/notifications", () => ({
   createNotification: (...a: unknown[]) => {
     createNotification(...a);
@@ -77,6 +87,22 @@ describe("applyPaymentStatusTransition", () => {
     expect(result.orderPayment?.status).toBe("paid");
     expect(update).not.toHaveBeenCalled();
     expect(logAudit).not.toHaveBeenCalled();
+  });
+
+  it("re-derives the order's own status after settling an installment", async () => {
+    findUnique.mockResolvedValue(existingPayment("pending"));
+
+    await applyPaymentStatusTransition("pay-1", { status: "paid" }, "actor-1");
+
+    expect(recomputeOrderStatus).toHaveBeenCalledWith("order-1");
+  });
+
+  it("does not touch the order's status when the transition was a no-op", async () => {
+    findUnique.mockResolvedValue(existingPayment("paid"));
+
+    await applyPaymentStatusTransition("pay-1", { status: "paid" }, "actor-1");
+
+    expect(recomputeOrderStatus).not.toHaveBeenCalled();
   });
 
   it("writes with a compare-and-swap on the status it read, not on id alone", async () => {

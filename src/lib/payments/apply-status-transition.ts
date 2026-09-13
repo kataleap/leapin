@@ -2,6 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { Prisma } from "@/generated/prisma/client";
 import { logAudit } from "@/lib/audit";
 import { createNotification } from "@/lib/notifications";
+import { recomputeOrderStatus, notifyOrderStatusChange } from "@/lib/orders/order-status";
 import type { PaymentGatewayStatus } from "./adapter";
 
 // Shared by both the webhook handler and the admin's manual "sync status"
@@ -89,6 +90,12 @@ export async function applyPaymentStatusTransition(
     oldValue: payment,
     newValue: updated,
   });
+
+  // A settled (or failed) installment changes what the order as a whole is —
+  // its first payment is what moves it out of `pending_payment`, and its last
+  // outstanding one is what lets a fully-delivered order read `completed`.
+  const orderStatus = await recomputeOrderStatus(payment.orderId);
+  await notifyOrderStatusChange(orderStatus, payment.orderId);
 
   if (result.status === "paid") {
     await createNotification({

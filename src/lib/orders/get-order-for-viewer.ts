@@ -19,6 +19,9 @@ export async function getOrderForViewer(orderId: string, session: Session) {
       orderStages: { include: { stage: true }, orderBy: { stage: { sequenceOrder: "asc" } } },
       orderPayments: true,
       tradeNames: { orderBy: [{ batchNumber: "asc" }, { priorityRank: "asc" }] },
+      // At most one per order (unique on order_id) — included for both the
+      // client's "المطلوب منك" panel and the admin's review panel.
+      nonObjectionLetters: { include: { document: true } },
       // A client only ever sees documents an admin has marked visible to them.
       documents: isClient ? { where: { isVisibleToClient: true } } : true,
     },
