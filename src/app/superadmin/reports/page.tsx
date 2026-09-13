@@ -2,15 +2,7 @@ import { prisma } from "@/lib/prisma";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { requirePageRole } from "@/lib/auth/require-page-role";
 import { UserRole } from "@/generated/prisma/enums";
-
-const ORDER_STATUS_LABEL: Record<string, string> = {
-  draft: "مسوّدة",
-  pending_payment: "بانتظار الدفع",
-  in_progress: "قيد التنفيذ",
-  completed: "مكتمل",
-  cancelled: "ملغى",
-  on_hold: "معلّق",
-};
+import { ORDER_STATUS_LABEL } from "@/lib/orders/status-labels";
 
 function riyal(value: number) {
   return `${value.toLocaleString("ar-SA")} ريال`;

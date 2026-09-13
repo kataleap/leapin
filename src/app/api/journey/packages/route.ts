@@ -25,14 +25,23 @@ export async function GET(request: Request) {
     include: { packageStages: { include: { stage: { include: { stagePricing: true } } } } },
   });
 
-  // Lets the client UI proactively show a country selector instead of
-  // discovering the requirement via a failed /journey/estimate call.
-  const withRequiresCountry = packages.map((pkg) => ({
-    ...pkg,
+  // Only what the journey renders. Spreading the Prisma row handed the client
+  // `createdByUserId`, the whole packageStages tree and every stage's internal
+  // pricing rows — the platform's cost structure, published to anyone with an
+  // account. `requiresCountry` is the one derived fact the wizard needs, so it
+  // can offer the country step instead of discovering the requirement through
+  // a failed /journey/estimate call.
+  const forClient = packages.map((pkg) => ({
+    id: pkg.id,
+    code: pkg.code,
+    nameAr: pkg.nameAr,
+    description: pkg.description,
+    trackId: pkg.trackId,
+    totalPriceOverride: pkg.totalPriceOverride,
     requiresCountry: pkg.packageStages.some((ps) =>
       ps.stage.stagePricing.some((sp) => sp.pricingType === "variable_by_country")
     ),
   }));
 
-  return NextResponse.json({ packages: withRequiresCountry });
+  return NextResponse.json({ packages: forClient });
 }

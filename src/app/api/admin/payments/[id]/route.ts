@@ -5,6 +5,7 @@ import { requireRole } from "@/lib/auth/guards";
 import { canStaffAccessOrder } from "@/lib/orders/assignment";
 import { logAudit } from "@/lib/audit";
 import { refundPaymentSchema } from "@/lib/validation/payments";
+import { recomputeOrderStatus } from "@/lib/orders/order-status";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -53,5 +54,10 @@ export async function PUT(request: Request, { params }: Params) {
     newValue: updated,
   });
 
-  return NextResponse.json({ orderPayment: updated });
+  // A refund removes a settled installment from the order's ledger, which can
+  // legitimately move it back out of `completed`. No completion notification
+  // here — refunding is never a completion.
+  const orderStatus = await recomputeOrderStatus(payment.orderId);
+
+  return NextResponse.json({ orderPayment: updated, orderStatus: orderStatus.status });
 }

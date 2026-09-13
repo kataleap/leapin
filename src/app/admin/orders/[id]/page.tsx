@@ -3,6 +3,9 @@ import { prisma } from "@/lib/prisma";
 import { UserRole } from "@/generated/prisma/enums";
 import { requirePageRole } from "@/lib/auth/require-page-role";
 import { AdminOrderPanel } from "@/components/admin/admin-order-panel";
+import { Badge } from "@/components/ui/badge";
+import { ORDER_STATUS_LABEL, ORDER_STATUS_VARIANT } from "@/lib/orders/status-labels";
+import { formatOrderNumber } from "@/lib/orders/order-number";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -20,6 +23,7 @@ export default async function AdminOrderDetailPage({ params }: Params) {
       tradeNames: { orderBy: [{ batchNumber: "asc" }, { priorityRank: "asc" }] },
       orderPayments: { orderBy: { installmentNumber: "asc" } },
       notificationLogs: { orderBy: { sentAt: "desc" } },
+      nonObjectionLetters: { include: { document: true } },
     },
   });
   if (!order) notFound();
@@ -34,7 +38,13 @@ export default async function AdminOrderDetailPage({ params }: Params) {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold">{order.track.nameAr}</h1>
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="text-2xl font-semibold">{order.track.nameAr}</h1>
+          <span className="text-muted-foreground font-mono text-sm">
+            {formatOrderNumber(order.orderNumber)}
+          </span>
+          <Badge variant={ORDER_STATUS_VARIANT[order.status]}>{ORDER_STATUS_LABEL[order.status]}</Badge>
+        </div>
         <p className="text-muted-foreground mt-1 text-sm">
           {order.client.name} — {order.client.email}
         </p>
@@ -48,6 +58,17 @@ export default async function AdminOrderDetailPage({ params }: Params) {
         initialTradeNames={order.tradeNames}
         initialOrderPayments={order.orderPayments.map((p) => ({ ...p, amount: Number(p.amount) }))}
         initialNotificationLogs={order.notificationLogs}
+        initialNonObjectionLetter={
+          order.nonObjectionLetters[0]
+            ? {
+                isRequired: order.nonObjectionLetters[0].isRequired,
+                status: order.nonObjectionLetters[0].status,
+                reviewNote: order.nonObjectionLetters[0].reviewNote,
+                documentId: order.nonObjectionLetters[0].documentId,
+                documentName: order.nonObjectionLetters[0].document?.originalFileName ?? null,
+              }
+            : null
+        }
       />
     </div>
   );

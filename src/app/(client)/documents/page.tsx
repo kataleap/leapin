@@ -57,6 +57,7 @@ export default async function ClientDocumentsPage() {
                       {doc.originalFileName}
                     </a>
                     <span className="text-muted-foreground flex items-center gap-2">
+                      <span>{doc.uploadedByClientId ? "رفعته أنت" : "من فريقنا"}</span>
                       <span>{doc.order.track.nameAr}</span>
                       <span>{new Date(doc.uploadedAt).toLocaleDateString("ar-SA")}</span>
                     </span>

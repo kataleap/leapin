@@ -8,20 +8,38 @@ import { Popover, PopoverTrigger, PopoverContent } from "@/components/ui/popover
 import { buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
+type NotificationType =
+  | "order_created"
+  | "stage_assigned"
+  | "stage_status_changed"
+  | "payment_due"
+  | "payment_received"
+  | "order_completed";
+
+// Client-facing types link into the client's own order page; everything else
+// is staff-facing and links into the admin view. Listing the client side
+// explicitly (rather than testing for one type and sending the rest to
+// /admin) is what stops a client's "دفعة مستحقة" notification from pointing
+// them at an admin URL they are not allowed to open.
+const CLIENT_FACING_TYPES: NotificationType[] = [
+  "stage_status_changed",
+  "payment_due",
+  "payment_received",
+  "order_completed",
+];
+
 type Notification = {
   id: string;
-  type: "order_created" | "stage_assigned" | "stage_status_changed";
+  type: NotificationType;
   title: string;
   message: string;
   orderId: string | null;
   isRead: boolean;
 };
 
-// Staff-facing types (order_created, stage_assigned) link into the admin
-// order view; the client-facing type links into the client tracking page.
 function orderHref(notification: Notification) {
   if (!notification.orderId) return null;
-  return notification.type === "stage_status_changed"
+  return CLIENT_FACING_TYPES.includes(notification.type)
     ? `/orders/${notification.orderId}`
     : `/admin/orders/${notification.orderId}`;
 }

@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { CountryForm } from "@/components/superadmin/country-form";
+import { CountryNationalityRestrictions } from "@/components/superadmin/country-nationality-restrictions";
 import { requirePageRole } from "@/lib/auth/require-page-role";
 import { UserRole } from "@/generated/prisma/enums";
 
@@ -10,7 +11,10 @@ export default async function EditCountryPage({ params }: Params) {
   await requirePageRole([UserRole.super_admin]);
 
   const { id } = await params;
-  const country = await prisma.country.findUnique({ where: { id } });
+  const country = await prisma.country.findUnique({
+    where: { id },
+    include: { nationalityRestrictions: true },
+  });
   if (!country) notFound();
 
   return (
@@ -28,6 +32,12 @@ export default async function EditCountryPage({ params }: Params) {
           poaRequired: country.poaRequired,
           status: country.status,
         }}
+      />
+      <CountryNationalityRestrictions
+        countryId={country.id}
+        initialIneligible={country.nationalityRestrictions
+          .filter((r) => !r.isEligible)
+          .map((r) => r.nationalityCode)}
       />
     </div>
   );

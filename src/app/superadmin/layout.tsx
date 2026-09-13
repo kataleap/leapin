@@ -4,6 +4,7 @@ import { AccountMenu } from "@/components/account/account-menu";
 
 const NAV = [
   { href: "/superadmin", label: "الرئيسية" },
+  { href: "/superadmin/unassigned", label: "غير مسندة" },
   { href: "/superadmin/stages", label: "المراحل" },
   { href: "/superadmin/packages", label: "الباقات" },
   { href: "/superadmin/payment-plans", label: "خطط الدفع" },

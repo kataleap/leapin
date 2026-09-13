@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 
 type OrderStage = {
   id: string;
@@ -22,6 +22,13 @@ type DocumentItem = {
   isVisibleToClient: boolean;
 };
 type TradeName = { id: string; nameAr: string; batchNumber: number; priorityRank: number; status: string };
+export type NonObjectionLetterItem = {
+  isRequired: boolean;
+  status: "not_submitted" | "under_review" | "approved" | "rejected";
+  reviewNote: string | null;
+  documentId: string | null;
+  documentName: string | null;
+};
 type OrderPaymentItem = {
   id: string;
   installmentNumber: number;
@@ -62,6 +69,7 @@ export function AdminOrderPanel({
   initialTradeNames,
   initialOrderPayments,
   initialNotificationLogs,
+  initialNonObjectionLetter,
 }: {
   orderId: string;
   isSuperAdmin: boolean;
@@ -71,6 +79,7 @@ export function AdminOrderPanel({
   initialTradeNames: TradeName[];
   initialOrderPayments: OrderPaymentItem[];
   initialNotificationLogs: NotificationLogItem[];
+  initialNonObjectionLetter: NonObjectionLetterItem | null;
 }) {
   const router = useRouter();
   const [stages, setStages] = useState(initialStages);
@@ -99,6 +108,10 @@ export function AdminOrderPanel({
   return (
     <div className="space-y-6">
       {error && <p className="text-destructive text-sm" role="alert">{error}</p>}
+
+      {initialNonObjectionLetter?.isRequired && (
+        <NonObjectionLetterReview orderId={orderId} letter={initialNonObjectionLetter} />
+      )}
 
       <Card>
         <CardHeader>
@@ -706,6 +719,117 @@ function OtpRequestCard({ orderId }: { orderId: string }) {
         </form>
         {sent && <p className="mt-2 text-sm text-green-600">تم تسجيل الطلب.</p>}
         {error && <p className="text-destructive mt-2 text-sm" role="alert">{error}</p>}
+      </CardContent>
+    </Card>
+  );
+}
+
+const NOL_LABEL: Record<NonObjectionLetterItem["status"], string> = {
+  not_submitted: "لم يُرفع بعد",
+  under_review: "قيد المراجعة",
+  approved: "معتمد",
+  rejected: "مرفوض",
+};
+
+// The order cannot proceed to a licence application without this letter when
+// it is required, so it sits above the stages rather than buried with the
+// other documents.
+function NonObjectionLetterReview({
+  orderId,
+  letter,
+}: {
+  orderId: string;
+  letter: NonObjectionLetterItem;
+}) {
+  const router = useRouter();
+  const [note, setNote] = useState(letter.reviewNote ?? "");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const reviewable = letter.status === "under_review";
+
+  async function review(status: "approved" | "rejected") {
+    setError(null);
+    if (status === "rejected" && note.trim().length === 0) {
+      setError("اذكر سبب الرفض حتى يتمكن العميل من تصحيحه.");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const res = await fetch(`/api/admin/orders/${orderId}/non-objection-letter`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status, reviewNote: note.trim() || undefined }),
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) {
+        setError(data?.error ?? "تعذّر حفظ المراجعة.");
+        return;
+      }
+      router.refresh();
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Card className={reviewable ? "border-primary" : undefined}>
+      <CardHeader>
+        <CardTitle>خطاب عدم الممانعة</CardTitle>
+        <CardDescription>
+          مطلوب لأن العميل مقيم في السعودية — يصدره صاحب العمل (الكفيل). الحالة:{" "}
+          {NOL_LABEL[letter.status]}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3 text-sm">
+        {letter.documentId ? (
+          <a
+            href={`/api/documents/${letter.documentId}/file`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-primary underline"
+          >
+            {letter.documentName ?? "عرض الخطاب"}
+          </a>
+        ) : (
+          <p className="text-muted-foreground">لم يرفع العميل الخطاب بعد.</p>
+        )}
+
+        {letter.status === "rejected" && letter.reviewNote && (
+          <p className="text-muted-foreground">سبب الرفض المسجَّل: {letter.reviewNote}</p>
+        )}
+
+        {reviewable && (
+          <>
+            <textarea
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="ملاحظة المراجعة (إلزامية عند الرفض)"
+              maxLength={500}
+              className="border-input min-h-16 w-full rounded-lg border bg-transparent p-2 text-sm"
+            />
+            <div className="flex gap-2">
+              <Button type="button" size="sm" disabled={submitting} onClick={() => review("approved")}>
+                اعتماد
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant="destructive"
+                disabled={submitting}
+                onClick={() => review("rejected")}
+              >
+                رفض
+              </Button>
+            </div>
+          </>
+        )}
+
+        {error && (
+          <p className="text-destructive text-sm" role="alert">
+            {error}
+          </p>
+        )}
       </CardContent>
     </Card>
   );

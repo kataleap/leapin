@@ -6,6 +6,7 @@ import { canStaffAccessOrder } from "@/lib/orders/assignment";
 import { logAudit } from "@/lib/audit";
 import { handlePrismaError } from "@/lib/api-errors";
 import { tradeNameBatchSchema } from "@/lib/validation/admin-orders";
+import { createTradeNameBatch } from "@/lib/orders/trade-names";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -31,26 +32,9 @@ export async function POST(request: Request, { params }: Params) {
   }
 
   try {
-    const tradeNames = await prisma.$transaction(async (tx) => {
-      const latest = await tx.tradeName.findFirst({
-        where: { orderId },
-        orderBy: { batchNumber: "desc" },
-      });
-      const batchNumber = (latest?.batchNumber ?? 0) + 1;
-      const now = new Date();
-
-      await tx.tradeName.createMany({
-        data: parsed.data.names.map((nameAr, index) => ({
-          orderId,
-          nameAr,
-          priorityRank: index + 1,
-          batchNumber,
-          status: "submitted",
-          submittedAt: now,
-        })),
-      });
-      return tx.tradeName.findMany({ where: { orderId, batchNumber }, orderBy: { priorityRank: "asc" } });
-    });
+    // Shared with the client's own submission route so both land in one
+    // batch sequence — see src/lib/orders/trade-names.ts.
+    const tradeNames = await createTradeNameBatch(orderId, parsed.data.names);
 
     await logAudit({
       actorUserId: session.user.id,

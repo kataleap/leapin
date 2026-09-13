@@ -9,6 +9,8 @@ import { handlePrismaError } from "@/lib/api-errors";
 import { stageUpdateInputSchema } from "@/lib/validation/admin-orders";
 import { createNotification } from "@/lib/notifications";
 import { sendExternalNotification } from "@/lib/email/send-external-notification";
+import { recomputeOrderStatus, notifyOrderStatusChange } from "@/lib/orders/order-status";
+import { STAGE_STATUS_LABEL } from "@/lib/orders/stage-labels";
 
 type Params = { params: Promise<{ id: string; stageId: string }> };
 
@@ -78,7 +80,7 @@ export async function PUT(request: Request, { params }: Params) {
     // *permanently*: re-saving the stage yields statusChanged === false, so
     // the activation below would never run again, and nothing surfaced an
     // error to anyone. Silent revenue loss.
-    const { updated, activatedInstallments } = await prisma.$transaction(async (tx) => {
+    const { updated, activatedInstallments, orderStatus } = await prisma.$transaction(async (tx) => {
       const updated = await tx.orderStage.update({
         where: { orderId_stageId: { orderId, stageId } },
         data,
@@ -112,7 +114,12 @@ export async function PUT(request: Request, { params }: Params) {
         }
       }
 
-      return { updated, activatedInstallments };
+      // Same transaction as the stage write that caused it: an order is
+      // `in_progress` because a stage of it started, and `completed` because
+      // its last one finished — those must never be able to disagree.
+      const orderStatus = await recomputeOrderStatus(orderId, tx);
+
+      return { updated, activatedInstallments, orderStatus };
     });
 
     await logAudit({
@@ -140,7 +147,7 @@ export async function PUT(request: Request, { params }: Params) {
           userId: order.clientId,
           type: "stage_status_changed",
           title: "تحديث في حالة طلبك",
-          message: `تغيّرت حالة مرحلة "${stageLabel}" إلى ${status}.`,
+          message: `تغيّرت حالة مرحلة "${stageLabel}" إلى «${STAGE_STATUS_LABEL[status]}».`,
           orderId,
         }).catch(() => {});
 
@@ -152,7 +159,7 @@ export async function PUT(request: Request, { params }: Params) {
             recipientEmail: order.client.email,
             eventType: status === "completed" ? "stage_completed" : "waiting_on_client",
             title: "تحديث في حالة طلبك",
-            message: `تغيّرت حالة مرحلة "${stageLabel}" إلى ${status}.`,
+            message: `تغيّرت حالة مرحلة "${stageLabel}" إلى «${STAGE_STATUS_LABEL[status]}».`,
             link: `${base}/orders/${orderId}`,
           });
         }
@@ -192,7 +199,12 @@ export async function PUT(request: Request, { params }: Params) {
       }
     }
 
-    return NextResponse.json({ orderStage: updated });
+    // Announced only after the transaction commits — telling a client their
+    // order is complete inside a transaction that may still roll back is a
+    // message that cannot be taken back.
+    await notifyOrderStatusChange(orderStatus, orderId);
+
+    return NextResponse.json({ orderStage: updated, orderStatus: orderStatus.status });
   } catch (err) {
     const handled = handlePrismaError(err);
     if (handled) return handled;

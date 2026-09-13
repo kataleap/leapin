@@ -5,6 +5,8 @@ import { requireRole } from "@/lib/auth/guards";
 import { canStaffAccessOrder } from "@/lib/orders/assignment";
 import { logAudit } from "@/lib/audit";
 import { confirmPaymentSchema } from "@/lib/validation/payments";
+import { recomputeOrderStatus, notifyOrderStatusChange } from "@/lib/orders/order-status";
+import { createNotification } from "@/lib/notifications";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -58,5 +60,27 @@ export async function POST(request: Request, { params }: Params) {
     newValue: updated,
   });
 
-  return NextResponse.json({ orderPayment: updated });
+  // This route settles a payment without going through
+  // applyPaymentStatusTransition, so it owns the same follow-ups — including
+  // this one, which it was missing entirely: a client paying by bank transfer
+  // or in cash was never told their money had been received, while a client
+  // paying online (whose settlement runs through the gateway path) always was.
+  const order = await prisma.order.findUnique({
+    where: { id: payment.orderId },
+    select: { clientId: true },
+  });
+  if (order) {
+    await createNotification({
+      userId: order.clientId,
+      type: "payment_received",
+      title: "تم تأكيد دفعتك",
+      message: `تم تأكيد استلام الدفعة رقم ${payment.installmentNumber} بنجاح.`,
+      orderId: payment.orderId,
+    }).catch(() => {});
+  }
+
+  const orderStatus = await recomputeOrderStatus(payment.orderId);
+  await notifyOrderStatusChange(orderStatus, payment.orderId);
+
+  return NextResponse.json({ orderPayment: updated, orderStatus: orderStatus.status });
 }

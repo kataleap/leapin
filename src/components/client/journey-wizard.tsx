@@ -25,7 +25,15 @@ type Package = {
   totalPriceOverride: string | null;
   requiresCountry: boolean;
 };
-type Country = { id: string; nameAr: string; nameEn: string; basePrice: string };
+type Country = {
+  id: string;
+  nameAr: string;
+  nameEn: string;
+  basePrice: string;
+  durationMinDays: number;
+  durationMaxDays: number;
+  poaRequired: boolean;
+};
 type EstimateResult = {
   breakdown: { stageId: string; nameAr: string; price: number }[];
   total: number;
@@ -34,11 +42,11 @@ type EstimateResult = {
 async function getJson<T>(url: string, init?: RequestInit): Promise<{ ok: boolean; data: T | null; error?: string }> {
   const res = await fetch(url, init);
   const data = await res.json().catch(() => null);
-  if (!res.ok) return { ok: false, data: null, error: data?.error ?? "Something went wrong." };
+  if (!res.ok) return { ok: false, data: null, error: data?.error ?? "حدث خطأ غير متوقع. حاول مرة أخرى." };
   return { ok: true, data };
 }
 
-export default function JourneyPage() {
+export function JourneyWizard() {
   const router = useRouter();
 
   const [tracks, setTracks] = useState<Track[] | null>(null);
@@ -56,6 +64,9 @@ export default function JourneyPage() {
   const [packageId, setPackageId] = useState<string | null>(null);
 
   const [countries, setCountries] = useState<Country[] | null>(null);
+  // Set when the list came back filtered against the client's own nationality
+  // — the reason a country they expected may be absent.
+  const [countriesFilteredBy, setCountriesFilteredBy] = useState<string | null>(null);
   const [countryId, setCountryId] = useState<string | null>(null);
 
   const [estimate, setEstimate] = useState<EstimateResult | null>(null);
@@ -131,8 +142,12 @@ export default function JourneyPage() {
   // Load the country list, once, the first time a country-requiring package is picked.
   useEffect(() => {
     if (selectedPackage?.requiresCountry && !countries) {
-      getJson<{ countries: Country[] }>("/api/journey/countries").then(({ data }) => {
-        if (data) setCountries(data.countries);
+      getJson<{ countries: Country[]; filteredByNationality: string | null }>(
+        "/api/journey/countries"
+      ).then(({ data }) => {
+        if (!data) return;
+        setCountries(data.countries);
+        setCountriesFilteredBy(data.filteredByNationality);
       });
     }
   }, [selectedPackage, countries]);
@@ -223,7 +238,7 @@ export default function JourneyPage() {
       );
       router.push(hasPayableInstallment ? "/payments" : `/orders/${data.order.id}`);
     } else {
-      setSubmitError(error ?? "Could not create the order.");
+      setSubmitError(error ?? "تعذّر إنشاء الطلب.");
     }
   }
 
@@ -235,14 +250,7 @@ export default function JourneyPage() {
   const countryStep = stepNumber++;
 
   return (
-    <main className="mx-auto max-w-2xl space-y-8 px-4 py-10">
-      <div>
-        <h1 className="text-2xl font-semibold">ابدأ رحلتك</h1>
-        <p className="text-muted-foreground mt-1 text-sm">
-          اختر المسار ثم الباقة المناسبة، وشاهد السعر فورًا.
-        </p>
-      </div>
-
+    <div className="space-y-8">
       <section className="space-y-3">
         <h2 className="text-sm font-medium">{trackStep}. اختر المسار</h2>
         {tracks === null ? (
@@ -381,19 +389,36 @@ export default function JourneyPage() {
           <h2 className="text-sm font-medium">{countryStep}. اختر الدولة</h2>
           {countries === null ? (
             <Skeleton className="h-16 w-full" />
+          ) : countries.length === 0 ? (
+            <p className="text-muted-foreground text-sm">
+              لا توجد دول متاحة لجنسيتك في هذه الباقة حاليًا — تواصل معنا لبحث خياراتك.
+            </p>
           ) : (
-            <RadioGroup value={countryId ?? ""} onValueChange={handleCountryChange} className="gap-3">
-              {countries.map((country) => (
-                <Label
-                  key={country.id}
-                  htmlFor={`country-${country.id}`}
-                  className="flex cursor-pointer items-center gap-3 rounded-lg border p-3 has-[[data-state=checked]]:border-primary"
-                >
-                  <RadioGroupItem value={country.id} id={`country-${country.id}`} />
-                  <span>{country.nameAr}</span>
-                </Label>
-              ))}
-            </RadioGroup>
+            <>
+              <RadioGroup value={countryId ?? ""} onValueChange={handleCountryChange} className="gap-3">
+                {countries.map((country) => (
+                  <Label
+                    key={country.id}
+                    htmlFor={`country-${country.id}`}
+                    className="flex cursor-pointer items-start gap-3 rounded-lg border p-3 has-[[data-state=checked]]:border-primary"
+                  >
+                    <RadioGroupItem value={country.id} id={`country-${country.id}`} className="mt-1" />
+                    <span className="flex-1">
+                      <span className="block font-medium">{country.nameAr}</span>
+                      <span className="text-muted-foreground block text-xs">
+                        المدة المتوقعة: {country.durationMinDays}–{country.durationMaxDays} يومًا
+                        {country.poaRequired ? " • تتطلب وكالة (Power of Attorney)" : ""}
+                      </span>
+                    </span>
+                  </Label>
+                ))}
+              </RadioGroup>
+              {countriesFilteredBy && (
+                <p className="text-muted-foreground text-xs">
+                  القائمة معروضة وفق جنسيتك المسجَّلة؛ الدول المقيّدة على جنسيتك غير مدرجة.
+                </p>
+              )}
+            </>
           )}
         </section>
       )}
@@ -439,6 +464,6 @@ export default function JourneyPage() {
           </Button>
         </div>
       )}
-    </main>
+    </div>
   );
 }

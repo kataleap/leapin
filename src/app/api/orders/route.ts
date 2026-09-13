@@ -8,6 +8,10 @@ import { orderCreateSchema } from "@/lib/validation/journey";
 import { calculateOrderPrice, getTrackStages, PricingError } from "@/lib/pricing/engine";
 import { buildOrderPayments } from "@/lib/pricing/payment-plan";
 import { createNotification, notifySuperAdmins } from "@/lib/notifications";
+import { recomputeOrderStatus } from "@/lib/orders/order-status";
+import { missingProfileFields, PROFILE_FIELD_LABEL } from "@/lib/orders/journey-readiness";
+import { isCountryEligibleFor } from "@/lib/orders/country-eligibility";
+import { isNonObjectionLetterRequired } from "@/lib/orders/non-objection";
 import { sendExternalNotification } from "@/lib/email/send-external-notification";
 
 // Session-dependent data on a fixed URL — without this, a browser can
@@ -43,6 +47,47 @@ export async function POST(request: Request) {
     parsed.data;
 
   try {
+    // The journey page refuses to start without these, but the page is not the
+    // gate — this endpoint is. An order created without a nationality on file
+    // cannot have its country choice validated at all.
+    const client = await prisma.user.findUnique({
+      where: { id: session.user.id },
+      select: { nationality: true, residencyStatus: true, phone: true, role: true },
+    });
+    if (!client) return NextResponse.json({ error: "Not found." }, { status: 404 });
+
+    if (client.role === UserRole.client) {
+      const missing = missingProfileFields(client);
+      if (missing.length > 0) {
+        return NextResponse.json(
+          {
+            error: `أكمل بيانات حسابك أولًا: ${missing.map((f) => PROFILE_FIELD_LABEL[f].label).join("، ")}.`,
+            missingProfileFields: missing,
+          },
+          { status: 409 }
+        );
+      }
+    }
+
+    // A country the client's nationality is barred from is never offered by
+    // the wizard; this is what makes that a rule rather than a rendering
+    // choice (doc §5.1, country_nationality_restrictions).
+    if (countryId) {
+      const country = await prisma.country.findUnique({
+        where: { id: countryId },
+        include: { nationalityRestrictions: { select: { nationalityCode: true, isEligible: true } } },
+      });
+      if (!country || country.status !== "active") {
+        return NextResponse.json({ error: "Country not found." }, { status: 400 });
+      }
+      if (!isCountryEligibleFor(country, client.nationality)) {
+        return NextResponse.json(
+          { error: "هذه الدولة غير متاحة لجنسيتك المسجَّلة." },
+          { status: 409 }
+        );
+      }
+    }
+
     // Defense in depth — the journey UI only ever offers activities from the
     // chosen category or an addable category per an `isAllowed` mixing rule,
     // but re-validate server-side since this is a state-changing endpoint.
@@ -133,6 +178,26 @@ export async function POST(request: Request) {
           data: activityIds.map((activityId) => ({ orderId: created.id, activityId })),
         });
       }
+
+      // The sponsor's no-objection letter (doc §5.2). The row is created for
+      // every order, carrying the verdict rather than only existing when the
+      // answer is yes — so "does this order need one?" is answered by the
+      // order's own record, and the answer is frozen at creation. A client who
+      // later leaves the country must not change what an in-flight order
+      // required of them.
+      await tx.nonObjectionLetter.create({
+        data: {
+          orderId: created.id,
+          isRequired: isNonObjectionLetterRequired(client),
+        },
+      });
+
+      // The row above is created `draft`; this derives what it actually is now
+      // that its stages and installments exist — an order whose plan opens with
+      // an on_registration installment is `pending_payment` from birth, not a
+      // draft. Inside the transaction so the order is never briefly visible in
+      // a status its own rows contradict.
+      await recomputeOrderStatus(created.id, tx);
 
       return tx.order.findUniqueOrThrow({
         where: { id: created.id },

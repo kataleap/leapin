@@ -124,6 +124,46 @@ async function seedActivityClassification(regularTrackId: string) {
   console.log("Seeded activity classification (service + commercial categories, mixing rule, placeholder activities).");
 }
 
+// ⚠️ Placeholder data, like everything else in this file — the six countries
+// are the ones named in the architecture doc §5.1 (countries table), but every
+// price and duration below is illustrative and awaits business sign-off.
+//
+// They are seeded because without at least one country the journey's country
+// step cannot be exercised at all: a package priced variable_by_country asks
+// for a country, `countries` was empty, and the step rendered an empty list
+// with no explanation.
+async function seedCountries() {
+  const countries = [
+    { nameAr: "الإمارات", nameEn: "United Arab Emirates", basePrice: 4500, min: 7, max: 21, poa: true },
+    { nameAr: "قطر", nameEn: "Qatar", basePrice: 5000, min: 14, max: 30, poa: true },
+    { nameAr: "عُمان", nameEn: "Oman", basePrice: 4000, min: 10, max: 25, poa: true },
+    { nameAr: "مصر", nameEn: "Egypt", basePrice: 3500, min: 14, max: 40, poa: true },
+    { nameAr: "بريطانيا", nameEn: "United Kingdom", basePrice: 6000, min: 5, max: 15, poa: false },
+    { nameAr: "أمريكا", nameEn: "United States", basePrice: 6500, min: 5, max: 20, poa: false },
+  ];
+
+  for (const c of countries) {
+    // `Country` has no natural unique key in the schema besides `id`, so guard
+    // with a lookup rather than upsert — matching the pattern used for
+    // placeholder activities above.
+    const existing = await prisma.country.findFirst({ where: { nameEn: c.nameEn } });
+    if (existing) continue;
+    await prisma.country.create({
+      data: {
+        nameAr: c.nameAr,
+        nameEn: c.nameEn,
+        basePrice: c.basePrice,
+        durationMinDays: c.min,
+        durationMaxDays: c.max,
+        requiredDocuments: [],
+        poaRequired: c.poa,
+        status: "active",
+      },
+    });
+  }
+  console.log(`Seeded ${countries.length} placeholder formation countries (no nationality restrictions).`);
+}
+
 async function main() {
   const regularTrack = await prisma.track.upsert({
     where: { code: "regular_investment" },
@@ -164,6 +204,7 @@ async function main() {
   });
 
   await seedActivityClassification(regularTrack.id);
+  await seedCountries();
   await seedSystemUser();
   await seedTestUsers();
 
