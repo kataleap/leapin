@@ -12,9 +12,16 @@ export type UserFormValues = {
   email: string;
   role: "client" | "admin" | "super_admin";
   isActive: boolean;
+  hasAccountingAccess: boolean;
 };
 
-const DEFAULTS: UserFormValues = { name: "", email: "", role: "admin", isActive: true };
+const DEFAULTS: UserFormValues = {
+  name: "",
+  email: "",
+  role: "admin",
+  isActive: true,
+  hasAccountingAccess: false,
+};
 
 const selectClass =
   "border-input flex h-8 w-full rounded-lg border bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
@@ -51,7 +58,13 @@ export function UserForm({
       const body =
         mode === "create"
           ? { ...values, phone, password }
-          : { name: values.name, role: values.role, isActive: values.isActive, ...(password ? { password } : {}) };
+          : {
+              name: values.name,
+              role: values.role,
+              isActive: values.isActive,
+              hasAccountingAccess: values.hasAccountingAccess,
+              ...(password ? { password } : {}),
+            };
       const res = await fetch(url, {
         method: mode === "create" ? "POST" : "PUT",
         headers: { "Content-Type": "application/json" },
@@ -134,7 +147,16 @@ export function UserForm({
           className={selectClass}
           value={values.role}
           disabled={isSelf}
-          onChange={(e) => set("role", e.target.value as UserFormValues["role"])}
+          onChange={(e) => {
+            const role = e.target.value as UserFormValues["role"];
+            // Mirror the API's invariant locally so the form never submits a
+            // client account still carrying the accounting flag.
+            setValues((v) => ({
+              ...v,
+              role,
+              hasAccountingAccess: role === "client" ? false : v.hasAccountingAccess,
+            }));
+          }}
         >
           <option value="client">عميل</option>
           <option value="admin">أدمن</option>
@@ -142,6 +164,25 @@ export function UserForm({
         </select>
         {isSelf && <p className="text-muted-foreground text-xs">لا يمكنك تغيير دور حسابك الخاص.</p>}
       </div>
+
+      {/* المرحلة السادسة §3.1 — صلاحية على مستوى الحساب لا دور جديد. لا معنى
+          لها على حساب عميل، والـ API يفرض ذلك أيضًا لا الواجهة وحدها. */}
+      {values.role !== "client" && (
+        <div className="space-y-1.5 rounded-lg border p-3">
+          <div className="flex items-center gap-2">
+            <Switch
+              id="hasAccountingAccess"
+              checked={values.hasAccountingAccess}
+              onCheckedChange={(checked) => set("hasAccountingAccess", checked)}
+            />
+            <Label htmlFor="hasAccountingAccess">صلاحية المحاسبة</Label>
+          </div>
+          <p className="text-muted-foreground text-xs">
+            يرى هذا الحساب قسم «المحاسبة» وكل الطلبات عبر كل العملاء دون قيد الإسناد، ويؤكد
+            الدفعات اليدوية عليها. الدفعات الإلكترونية تبقى خارج صلاحيته.
+          </p>
+        </div>
+      )}
 
       {mode === "edit" && (
         <div className="flex items-center gap-2">

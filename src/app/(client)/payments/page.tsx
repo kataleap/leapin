@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { PaymentActions } from "@/components/client/payment-actions";
+import { isAwaitingManualReview } from "@/lib/payments/installment-view";
 
 const PAYMENT_STATUS_LABEL: Record<string, string> = {
   pending: "مستحقة",
@@ -59,7 +60,7 @@ export default async function ClientPaymentsPage() {
             <CardContent className="space-y-3">
               {orderPayments.map((p) => {
                 const payable = p.dueAt != null && p.status === "pending";
-                const awaitingReview = p.method === "bank_transfer" && p.proofUploadedAt != null && p.status === "pending";
+                const awaitingReview = isAwaitingManualReview(p);
                 return (
                   <div key={p.id} className="space-y-2 rounded-lg border p-3 text-sm">
                     <div className="flex items-center justify-between">

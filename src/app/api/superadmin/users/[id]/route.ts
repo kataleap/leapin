@@ -12,7 +12,15 @@ import { userUpdateSchema } from "@/lib/validation/users";
 // serve a different (previously authenticated) user's cached response.
 export const dynamic = "force-dynamic";
 
-const SAFE_SELECT = { id: true, name: true, email: true, role: true, isActive: true, createdAt: true } as const;
+const SAFE_SELECT = {
+  id: true,
+  name: true,
+  email: true,
+  role: true,
+  isActive: true,
+  hasAccountingAccess: true,
+  createdAt: true,
+} as const;
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -57,6 +65,13 @@ export async function PUT(request: Request, { params }: Params) {
 
   const data: Prisma.UserUncheckedUpdateInput = { ...rest };
   if (password) data.passwordHash = await hashPassword(password);
+
+  // Phase 6 §3.1: keep the accounting flag off every client account. This
+  // reads the *resulting* role, not the submitted one, so demoting an admin
+  // to client clears the flag in the same write rather than leaving a client
+  // row that can see every order on the platform.
+  const effectiveRole = rest.role ?? before.role;
+  if (effectiveRole === UserRole.client) data.hasAccountingAccess = false;
 
   try {
     const user = await prisma.user.update({ where: { id }, data, select: SAFE_SELECT });

@@ -16,7 +16,7 @@ export default async function UsersListPage() {
   await requirePageRole([UserRole.super_admin]);
 
   const users = await prisma.user.findMany({
-    select: { id: true, name: true, email: true, role: true, isActive: true },
+    select: { id: true, name: true, email: true, role: true, isActive: true, hasAccountingAccess: true },
     orderBy: { createdAt: "desc" },
   });
 
@@ -45,7 +45,10 @@ export default async function UsersListPage() {
               </TableCell>
               <TableCell>{user.email}</TableCell>
               <TableCell>
-                <Badge variant="secondary">{ROLE_LABEL[user.role] ?? user.role}</Badge>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <Badge variant="secondary">{ROLE_LABEL[user.role] ?? user.role}</Badge>
+                  {user.hasAccountingAccess && <Badge variant="outline">محاسبة</Badge>}
+                </div>
               </TableCell>
               <TableCell>
                 <Badge variant={user.isActive ? "default" : "outline"}>

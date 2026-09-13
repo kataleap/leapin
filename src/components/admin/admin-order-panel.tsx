@@ -63,6 +63,7 @@ const selectClass =
 export function AdminOrderPanel({
   orderId,
   isSuperAdmin,
+  accountingOnly = false,
   currentUserId,
   initialStages,
   initialDocuments,
@@ -73,6 +74,14 @@ export function AdminOrderPanel({
 }: {
   orderId: string;
   isSuperAdmin: boolean;
+  /**
+   * Phase 6 §4/§5.5 — this viewer reached the order through the accounting
+   * permission alone, not through an assignment. They may read everything,
+   * attach the signed contract, and confirm a manual payment; every other
+   * control is hidden because the API behind it would refuse them anyway,
+   * and a button that always 403s is worse than no button.
+   */
+  accountingOnly?: boolean;
   currentUserId: string;
   initialStages: OrderStage[];
   initialDocuments: DocumentItem[];
@@ -109,7 +118,15 @@ export function AdminOrderPanel({
     <div className="space-y-6">
       {error && <p className="text-destructive text-sm" role="alert">{error}</p>}
 
-      {initialNonObjectionLetter?.isRequired && (
+      {accountingOnly && (
+        <p className="text-muted-foreground rounded-lg border p-3 text-sm">
+          تعرض هذه الصفحة للاطلاع بصلاحية المحاسبة. المتاح لك هنا: تأكيد الدفعات اليدوية وإرفاق
+          المستندات. تعديل المراحل والأسماء التجارية وخطاب عدم الممانعة والدفعات الإلكترونية خارج
+          صلاحيتك.
+        </p>
+      )}
+
+      {initialNonObjectionLetter?.isRequired && !accountingOnly && (
         <NonObjectionLetterReview orderId={orderId} letter={initialNonObjectionLetter} />
       )}
 
@@ -146,7 +163,7 @@ export function AdminOrderPanel({
                   <select
                     className={selectClass}
                     value={s.status}
-                    disabled={!isSuperAdmin && s.assignedAdminId !== currentUserId}
+                    disabled={accountingOnly || (!isSuperAdmin && s.assignedAdminId !== currentUserId)}
                     onChange={(e) => updateStage(s, { status: e.target.value })}
                   >
                     {STAGE_STATUS_OPTIONS.map((opt) => (
@@ -165,22 +182,26 @@ export function AdminOrderPanel({
       <PaymentsCard
         orderId={orderId}
         payments={orderPayments}
+        accountingOnly={accountingOnly}
         onUpdated={(p) => setOrderPayments((prev) => prev.map((x) => (x.id === p.id ? p : x)))}
       />
       <NotificationsCard
         logs={notificationLogs}
+        accountingOnly={accountingOnly}
         onUpdated={(log) => setNotificationLogs((prev) => prev.map((x) => (x.id === log.id ? log : x)))}
       />
       <DocumentUploadCard orderId={orderId} documents={documents} onUploaded={(d) => setDocuments((p) => [...p, d])} />
-      <TradeNamesCard
-        orderId={orderId}
-        tradeNames={tradeNames}
-        onBatchSubmitted={(names) => setTradeNames((p) => [...p, ...names])}
-        onStatusUpdated={(id, status) =>
-          setTradeNames((p) => p.map((t) => (t.id === id ? { ...t, status } : t)))
-        }
-      />
-      <OtpRequestCard orderId={orderId} />
+      {!accountingOnly && (
+        <TradeNamesCard
+          orderId={orderId}
+          tradeNames={tradeNames}
+          onBatchSubmitted={(names) => setTradeNames((p) => [...p, ...names])}
+          onStatusUpdated={(id, status) =>
+            setTradeNames((p) => p.map((t) => (t.id === id ? { ...t, status } : t)))
+          }
+        />
+      )}
+      {!accountingOnly && <OtpRequestCard orderId={orderId} />}
     </div>
   );
 }
@@ -201,10 +222,12 @@ const PAYMENT_STATUS_LABEL: Record<string, string> = {
 function PaymentsCard({
   orderId,
   payments,
+  accountingOnly,
   onUpdated,
 }: {
   orderId: string;
   payments: OrderPaymentItem[];
+  accountingOnly: boolean;
   onUpdated: (payment: OrderPaymentItem) => void;
 }) {
   const [error, setError] = useState<string | null>(null);
@@ -269,7 +292,12 @@ function PaymentsCard({
               )}
             </div>
             <div className="flex flex-wrap gap-2">
-              {p.dueAt && p.status === "pending" && (
+              {/* Phase 6 §4 — everything Moyasar-facing is hidden from an
+                  accounting-only viewer: issuing a checkout link, syncing
+                  gateway status, and recording a refund. An installment that
+                  already carries a gateway reference is off-limits to them
+                  entirely, so even the manual confirmations drop away. */}
+              {!accountingOnly && p.dueAt && p.status === "pending" && (
                 <Button
                   type="button"
                   size="sm"
@@ -280,7 +308,8 @@ function PaymentsCard({
                   إعادة إرسال رابط الدفع
                 </Button>
               )}
-              {p.method === "bank_transfer" && p.proofOriginalFileName && p.status === "pending" && (
+              {!(accountingOnly && p.gatewayReference) &&
+                p.method === "bank_transfer" && p.proofOriginalFileName && p.status === "pending" && (
                 <Button
                   type="button"
                   size="sm"
@@ -291,7 +320,7 @@ function PaymentsCard({
                   تأكيد استلام التحويل
                 </Button>
               )}
-              {p.dueAt && p.status === "pending" && (
+              {!(accountingOnly && p.gatewayReference) && p.dueAt && p.status === "pending" && (
                 <Button
                   type="button"
                   size="sm"
@@ -302,7 +331,7 @@ function PaymentsCard({
                   تسجيل دفعة كاش
                 </Button>
               )}
-              {p.method === "online" && p.gatewayReference && p.status === "pending" && (
+              {!accountingOnly && p.method === "online" && p.gatewayReference && p.status === "pending" && (
                 <Button
                   type="button"
                   size="sm"
@@ -313,7 +342,7 @@ function PaymentsCard({
                   مزامنة الحالة
                 </Button>
               )}
-              {p.status === "paid" && (
+              {!accountingOnly && p.status === "paid" && (
                 <Button
                   type="button"
                   size="sm"
@@ -351,9 +380,11 @@ const NOTIFICATION_STATUS_LABEL: Record<string, string> = {
 
 function NotificationsCard({
   logs,
+  accountingOnly,
   onUpdated,
 }: {
   logs: NotificationLogItem[];
+  accountingOnly: boolean;
   onUpdated: (log: NotificationLogItem) => void;
 }) {
   const [error, setError] = useState<string | null>(null);
@@ -396,7 +427,10 @@ function NotificationsCard({
               <Badge variant={log.status === "sent" ? "default" : "destructive"}>
                 {NOTIFICATION_STATUS_LABEL[log.status] ?? log.status}
               </Badge>
-              {log.status === "failed" && (
+              {/* Resending goes through canStaffAccessOrder, which the
+                  accounting flag deliberately does not widen — the log stays
+                  readable, the action does not. */}
+              {!accountingOnly && log.status === "failed" && (
                 <Button type="button" size="sm" variant="outline" disabled={busyId === log.id} onClick={() => resend(log)}>
                   إعادة إرسال
                 </Button>

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { UserRole } from "@/generated/prisma/enums";
 import { requireAuth } from "@/lib/auth/guards";
-import { canStaffAccessOrder } from "@/lib/orders/assignment";
+import { resolveStaffOrderAccess } from "@/lib/orders/assignment";
 import { privateFileResponse, readStoredFile } from "@/lib/storage/documents";
 
 type Params = { params: Promise<{ id: string; installmentNumber: string }> };
@@ -23,7 +23,9 @@ export async function GET(_request: Request, { params }: Params) {
   const { role, id: userId } = session.user;
   if (role === UserRole.client) {
     if (order.clientId !== userId) return NextResponse.json({ error: "Forbidden." }, { status: 403 });
-  } else if (!(await canStaffAccessOrder(orderId, session))) {
+  } else if (!(await resolveStaffOrderAccess(orderId, session)).canView) {
+    // Phase 6: an accountant confirms transfers across every order, so they
+    // must be able to open the receipt they are confirming.
     return NextResponse.json({ error: "Forbidden." }, { status: 403 });
   }
 

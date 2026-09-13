@@ -6,6 +6,8 @@ import { AdminOrderPanel } from "@/components/admin/admin-order-panel";
 import { Badge } from "@/components/ui/badge";
 import { ORDER_STATUS_LABEL, ORDER_STATUS_VARIANT } from "@/lib/orders/status-labels";
 import { formatOrderNumber } from "@/lib/orders/order-number";
+import { sessionHasAccountingAccess } from "@/lib/auth/accounting";
+import { resolveOrderAccess } from "@/lib/orders/accounting-access";
 
 type Params = { params: Promise<{ id: string }> };
 
@@ -30,10 +32,16 @@ export default async function AdminOrderDetailPage({ params }: Params) {
 
   const isSuperAdmin = session.user.role === UserRole.super_admin;
   // Per doc §2.1: a plain admin only ever accesses orders assigned to them.
-  if (!isSuperAdmin) {
-    const isAssigned = order.orderStages.some((s) => s.assignedAdminId === session.user.id);
-    if (!isAssigned) notFound();
-  }
+  // Phase 6 §5.5 widens this by one case — an accounting account arriving
+  // from the accounting screen — and by one case only: `access.viaAccounting`
+  // below then strips the panel back to what §4 permits.
+  const isAssignedStaff =
+    isSuperAdmin || order.orderStages.some((s) => s.assignedAdminId === session.user.id);
+  const access = resolveOrderAccess({
+    isAssignedStaff,
+    hasAccounting: await sessionHasAccountingAccess(session),
+  });
+  if (!access.canView) notFound();
 
   return (
     <div className="space-y-6">
@@ -52,6 +60,7 @@ export default async function AdminOrderDetailPage({ params }: Params) {
       <AdminOrderPanel
         orderId={order.id}
         isSuperAdmin={isSuperAdmin}
+        accountingOnly={access.viaAccounting}
         currentUserId={session.user.id}
         initialStages={order.orderStages}
         initialDocuments={order.documents}

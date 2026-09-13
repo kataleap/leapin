@@ -13,6 +13,11 @@ export const userCreateSchema = z.object({
   phone: z.string().min(1),
   password: z.string().min(8),
   role: z.enum(UserRole),
+  // Phase 6 §3.1. Optional because most accounts never carry it; the route
+  // forces it to false whenever the role is client, so a caller cannot grant
+  // a client account platform-wide financial visibility by hand-crafting the
+  // request body.
+  hasAccountingAccess: z.boolean().optional(),
 });
 
 // Deliberately excludes `phone`: a super_admin editing another user must
@@ -24,4 +29,5 @@ export const userUpdateSchema = z.object({
   role: z.enum(UserRole).optional(),
   isActive: z.boolean().optional(),
   password: z.string().min(8).optional(),
+  hasAccountingAccess: z.boolean().optional(),
 });

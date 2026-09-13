@@ -12,7 +12,7 @@ export default async function EditUserPage({ params }: Params) {
   const { id } = await params;
   const user = await prisma.user.findUnique({
     where: { id },
-    select: { id: true, name: true, email: true, role: true, isActive: true },
+    select: { id: true, name: true, email: true, role: true, isActive: true, hasAccountingAccess: true },
   });
   if (!user) notFound();
 

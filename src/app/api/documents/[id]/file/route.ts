@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { UserRole } from "@/generated/prisma/enums";
 import { requireAuth } from "@/lib/auth/guards";
-import { canStaffAccessOrder } from "@/lib/orders/assignment";
+import { resolveStaffOrderAccess } from "@/lib/orders/assignment";
 import { privateFileResponse, readStoredFile } from "@/lib/storage/documents";
 
 type Params = { params: Promise<{ id: string }> };
@@ -31,7 +31,9 @@ export async function GET(_request: Request, { params }: Params) {
     if (!document.isVisibleToClient || document.order.clientId !== userId) {
       return NextResponse.json({ error: "Forbidden." }, { status: 403 });
     }
-  } else if (!(await canStaffAccessOrder(document.orderId, session))) {
+  } else if (!(await resolveStaffOrderAccess(document.orderId, session)).canView) {
+    // Phase 6 §4: accounting access reaches contract and payment paperwork
+    // on every order, not only assigned ones.
     return NextResponse.json({ error: "Forbidden." }, { status: 403 });
   }
 

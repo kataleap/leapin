@@ -115,7 +115,9 @@
       "Bash(disown)",
       "Bash(timeout 60 bash -c 'until curl -sf http://localhost:3000 >/dev/null; do sleep 1; done')",
       "Bash(curl -s -X POST http://localhost:3000/api/auth/login/password-check -H 'Content-Type: application/json' -d '{\"email\":\"phase5test5821@example.com\",\"password\":\"TestPassw0rd!\"}' -w '\\\\nHTTP:%{http_code}\\\\n')",
-      "Bash(tail -60 /tmp/leapin-dev.log)"
+      "Bash(tail -60 /tmp/leapin-dev.log)",
+      "Bash(pnpm typecheck *)",
+      "Bash(pnpm test *)"
     ],
     "additionalDirectories": [
       "/Users/ia-imad/Documents/Github/Leapin/leapin/src/app/api/auth",

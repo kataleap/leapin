@@ -11,7 +11,15 @@ import { userCreateSchema } from "@/lib/validation/users";
 // serve a different (previously authenticated) user's cached response.
 export const dynamic = "force-dynamic";
 
-const SAFE_SELECT = { id: true, name: true, email: true, role: true, isActive: true, createdAt: true } as const;
+const SAFE_SELECT = {
+  id: true,
+  name: true,
+  email: true,
+  role: true,
+  isActive: true,
+  hasAccountingAccess: true,
+  createdAt: true,
+} as const;
 
 export async function GET() {
   const { response } = await requireRole([UserRole.super_admin]);
@@ -35,10 +43,15 @@ export async function POST(request: Request) {
   }
   const { name, email, phone, password, role } = parsed.data;
   const passwordHash = await hashPassword(password);
+  // Phase 6 §3.1: the accounting flag is meaningless on a client account and
+  // would widen a client's visibility to every other client's money if it
+  // ever stuck. Enforced here rather than in the form, which only hides the
+  // control.
+  const hasAccountingAccess = role === UserRole.client ? false : (parsed.data.hasAccountingAccess ?? false);
 
   try {
     const user = await prisma.user.create({
-      data: { name, email, phone, passwordHash, role, isActive: true },
+      data: { name, email, phone, passwordHash, role, isActive: true, hasAccountingAccess },
       select: SAFE_SELECT,
     });
     await logAudit({

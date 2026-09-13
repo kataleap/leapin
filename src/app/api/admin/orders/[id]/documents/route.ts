@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { UserRole } from "@/generated/prisma/enums";
 import { requireRole } from "@/lib/auth/guards";
-import { canStaffAccessOrder } from "@/lib/orders/assignment";
+import { resolveStaffOrderAccess } from "@/lib/orders/assignment";
 import { logAudit } from "@/lib/audit";
 import { handlePrismaError } from "@/lib/api-errors";
 import { documentUploadMetaSchema } from "@/lib/validation/admin-orders";
@@ -18,7 +18,10 @@ export async function POST(request: Request, { params }: Params) {
   const order = await prisma.order.findUnique({ where: { id: orderId } });
   if (!order) return NextResponse.json({ error: "Not found." }, { status: 404 });
 
-  if (!(await canStaffAccessOrder(orderId, session))) {
+  // Phase 6 §5.5: the accounting section sends its user here to attach the
+  // signed contract, so an accountant may upload on any order.
+  const access = await resolveStaffOrderAccess(orderId, session);
+  if (!access.canUploadDocuments) {
     return NextResponse.json({ error: "This order is not assigned to you." }, { status: 403 });
   }
 
@@ -56,7 +59,7 @@ export async function POST(request: Request, { params }: Params) {
     });
     await logAudit({
       actorUserId: session.user.id,
-      action: "upload_document",
+      action: access.viaAccounting ? "upload_document_via_accounting" : "upload_document",
       entityType: "document_vault",
       entityId: document.id,
       newValue: document,

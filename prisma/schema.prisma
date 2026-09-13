@@ -472,6 +472,18 @@ model User {
   addressCity       String?          @map("address_city")
   addressPostalCode String?          @map("address_postal_code")
   isActive          Boolean          @default(true) @map("is_active")
+  // Phase 6 §3.1: per-account accounting permission, toggled from the
+  // super admin panel. Deliberately a flag rather than a fourth UserRole:
+  // an admin with clients assigned AND this flag is both admin and
+  // accountant on one account, and an admin with no assignments and the
+  // flag is a full-time accountant.
+  //
+  // §3.2: this complements RolePermission rather than replacing it —
+  // RolePermission grants rights per role, this widens *data visibility
+  // scope* (all clients instead of only assigned ones) for one individual
+  // account. Never set on a client account; the API forces it back to
+  // false whenever the resulting role is client.
+  hasAccountingAccess Boolean        @default(false) @map("has_accounting_access")
   createdAt         DateTime         @default(now()) @map("created_at")
 
   accounts Account[]

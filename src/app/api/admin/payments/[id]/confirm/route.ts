@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { UserRole } from "@/generated/prisma/enums";
 import { requireRole } from "@/lib/auth/guards";
-import { canStaffAccessOrder } from "@/lib/orders/assignment";
+import { resolveStaffOrderAccess } from "@/lib/orders/assignment";
 import { logAudit } from "@/lib/audit";
 import { confirmPaymentSchema } from "@/lib/validation/payments";
 import { recomputeOrderStatus, notifyOrderStatusChange } from "@/lib/orders/order-status";
@@ -19,7 +19,12 @@ export async function POST(request: Request, { params }: Params) {
   const payment = await prisma.orderPayment.findUnique({ where: { id } });
   if (!payment) return NextResponse.json({ error: "Not found." }, { status: 404 });
 
-  if (!(await canStaffAccessOrder(payment.orderId, session))) {
+  // Phase 6 §4: an account carrying the accounting flag confirms manual
+  // payments on any order, assigned or not. Note this widening stops here —
+  // the refund handler next door and the Moyasar sync route still ask
+  // canStaffAccessOrder, so an accountant cannot reach either.
+  const access = await resolveStaffOrderAccess(payment.orderId, session);
+  if (!access.canConfirmPayment) {
     return NextResponse.json({ error: "This order is not assigned to you." }, { status: 403 });
   }
 
@@ -34,6 +39,19 @@ export async function POST(request: Request, { params }: Params) {
   }
   if (parsed.data.method === "bank_transfer" && !payment.proofStoragePath) {
     return NextResponse.json({ error: "No bank-transfer proof has been uploaded for this installment." }, { status: 400 });
+  }
+
+  // §4, the explicit carve-out: electronic payments are entirely outside
+  // this permission's reach. An installment that already has a gateway
+  // invoice against it may still be settled in cash by the admin who owns
+  // the order — that is a real workflow and stays as it was — but an
+  // accountant reaching in on assignment-free authority must not race the
+  // Moyasar webhook for the same row.
+  if (access.viaAccounting && payment.gatewayReference) {
+    return NextResponse.json(
+      { error: "This installment has an electronic payment in progress and is outside the accounting permission." },
+      { status: 403 }
+    );
   }
 
   // `status: "pending"` in the filter re-asserts, at write time, the check
@@ -53,7 +71,11 @@ export async function POST(request: Request, { params }: Params) {
   const updated = await prisma.orderPayment.findUniqueOrThrow({ where: { id } });
   await logAudit({
     actorUserId: session.user.id,
-    action: "confirm_order_payment",
+    // §6: an action taken on accounting authority is tagged distinctly, so a
+    // later review can tell it apart from an assigned admin's ordinary
+    // executive confirmation without cross-referencing stage assignments
+    // that may have changed since.
+    action: access.viaAccounting ? "confirm_order_payment_via_accounting" : "confirm_order_payment",
     entityType: "order_payment",
     entityId: id,
     oldValue: payment,
