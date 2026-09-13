@@ -6,12 +6,15 @@ import type { UserRole } from "@/generated/prisma/enums";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NATIONALITIES } from "@/lib/reference/nationalities";
 
 export type ProfileFormValues = {
   name: string;
   email: string;
   phone: string;
   nationality: string;
+  residencyStatus: string;
+  nationalIdOrIqama: string;
   addressCountry: string;
   addressCity: string;
   addressPostalCode: string;
@@ -50,7 +53,14 @@ export function ProfileForm({
     setSubmitting(true);
     try {
       const body = isClient
-        ? values
+        ? {
+            ...values,
+            // The schema rejects an empty string on these; empty means the
+            // client cleared the field, which is "no value", not "".
+            residencyStatus: values.residencyStatus || undefined,
+            nationalIdOrIqama: values.nationalIdOrIqama.trim() || null,
+            nationality: values.nationality || undefined,
+          }
         : { name: values.name, email: values.email, phone: values.phone };
       const res = await fetch("/api/profile", {
         method: "PUT",
@@ -131,11 +141,61 @@ export function ProfileForm({
           <>
             <div className="space-y-1.5">
               <Label htmlFor="nationality">الجنسية</Label>
-              <Input
+              <select
                 id="nationality"
                 value={values.nationality}
                 onChange={(e) => set("nationality", e.target.value)}
                 required
+                className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
+              >
+                <option value="" disabled>
+                  اختر جنسيتك
+                </option>
+                {NATIONALITIES.map((n) => (
+                  <option key={n.code} value={n.code}>
+                    {n.nameAr}
+                  </option>
+                ))}
+              </select>
+              <p className="text-muted-foreground text-xs">
+                تحدّد الدول المتاحة لك لتأسيس شركة أجنبية بالوكالة.
+              </p>
+            </div>
+
+            <fieldset className="space-y-1.5">
+              <legend className="text-sm font-medium">صفة الإقامة</legend>
+              <div className="flex gap-4 text-sm">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="residencyStatus"
+                    checked={values.residencyStatus === "non_resident"}
+                    onChange={() => set("residencyStatus", "non_resident")}
+                  />
+                  <span>غير مقيم في السعودية</span>
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="residencyStatus"
+                    checked={values.residencyStatus === "resident"}
+                    onChange={() => set("residencyStatus", "resident")}
+                  />
+                  <span>مقيم في السعودية</span>
+                </label>
+              </div>
+              <p className="text-muted-foreground text-xs">
+                تحدّد ما إذا كانت رحلتك تتطلب خطاب عدم ممانعة.
+              </p>
+            </fieldset>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="nationalIdOrIqama">رقم الهوية أو الإقامة</Label>
+              <Input
+                id="nationalIdOrIqama"
+                value={values.nationalIdOrIqama}
+                onChange={(e) => set("nationalIdOrIqama", e.target.value)}
+                maxLength={30}
               />
             </div>
 

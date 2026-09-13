@@ -21,6 +21,8 @@ export default async function ClientProfilePage() {
           email: user.email,
           phone: user.phone ?? "",
           nationality: user.nationality ?? "",
+          residencyStatus: user.residencyStatus ?? "",
+          nationalIdOrIqama: user.nationalIdOrIqama ?? "",
           addressCountry: user.addressCountry ?? "",
           addressCity: user.addressCity ?? "",
           addressPostalCode: user.addressPostalCode ?? "",

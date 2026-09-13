@@ -19,6 +19,8 @@ export default async function SuperAdminProfilePage() {
           email: user.email,
           phone: user.phone ?? "",
           nationality: "",
+          residencyStatus: "",
+          nationalIdOrIqama: "",
           addressCountry: "",
           addressCity: "",
           addressPostalCode: "",

@@ -19,6 +19,8 @@ const SAFE_SELECT = {
   phoneVerifiedAt: true,
   pendingPhone: true,
   nationality: true,
+  residencyStatus: true,
+  nationalIdOrIqama: true,
   addressCountry: true,
   addressCity: true,
   addressPostalCode: true,

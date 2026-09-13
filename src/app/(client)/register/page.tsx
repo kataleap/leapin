@@ -7,12 +7,16 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card";
+import { NATIONALITIES } from "@/lib/reference/nationalities";
 
 export default function RegisterPage() {
   const router = useRouter();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
+  const [nationality, setNationality] = useState("");
+  const [residencyStatus, setResidencyStatus] = useState<"resident" | "non_resident">("non_resident");
+  const [nationalIdOrIqama, setNationalIdOrIqama] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -30,7 +34,18 @@ export default function RegisterPage() {
       const res = await fetch("/api/auth/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, email, phone, password, confirmPassword }),
+        body: JSON.stringify({
+          name,
+          email,
+          phone,
+          nationality,
+          residencyStatus,
+          // Empty means "not provided" — the field is optional, and an empty
+          // string would fail the schema's min(1) rather than be ignored.
+          nationalIdOrIqama: nationalIdOrIqama.trim() || undefined,
+          password,
+          confirmPassword,
+        }),
       });
 
       if (res.status === 409) {
@@ -83,6 +98,65 @@ export default function RegisterPage() {
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 required
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="nationality">الجنسية</Label>
+              <select
+                id="nationality"
+                value={nationality}
+                onChange={(e) => setNationality(e.target.value)}
+                required
+                className="border-input bg-background h-9 w-full rounded-md border px-3 text-sm"
+              >
+                <option value="" disabled>
+                  اختر جنسيتك
+                </option>
+                {NATIONALITIES.map((n) => (
+                  <option key={n.code} value={n.code}>
+                    {n.nameAr}
+                  </option>
+                ))}
+              </select>
+              <p className="text-muted-foreground text-xs">
+                تحدّد جنسيتك الدول المتاحة لتأسيس شركة أجنبية بالوكالة.
+              </p>
+            </div>
+            <fieldset className="space-y-1.5">
+              <legend className="text-sm font-medium">صفة الإقامة</legend>
+              <div className="flex gap-4 text-sm">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="residencyStatus"
+                    value="non_resident"
+                    checked={residencyStatus === "non_resident"}
+                    onChange={() => setResidencyStatus("non_resident")}
+                  />
+                  <span>غير مقيم في السعودية</span>
+                </label>
+                <label className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name="residencyStatus"
+                    value="resident"
+                    checked={residencyStatus === "resident"}
+                    onChange={() => setResidencyStatus("resident")}
+                  />
+                  <span>مقيم في السعودية</span>
+                </label>
+              </div>
+              <p className="text-muted-foreground text-xs">
+                تحدّد ما إذا كانت رحلتك تتطلب خطاب عدم ممانعة.
+              </p>
+            </fieldset>
+            <div className="space-y-1.5">
+              <Label htmlFor="nationalIdOrIqama">رقم الهوية أو الإقامة (اختياري)</Label>
+              <Input
+                id="nationalIdOrIqama"
+                value={nationalIdOrIqama}
+                onChange={(e) => setNationalIdOrIqama(e.target.value)}
+                maxLength={30}
               />
             </div>
             <div className="space-y-1.5">

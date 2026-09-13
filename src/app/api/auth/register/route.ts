@@ -13,15 +13,32 @@ export async function POST(request: Request) {
       { status: 400 }
     );
   }
-  const { name, email, phone, password } = parsed.data;
+  const { name, email, phone, password, nationality, residencyStatus, nationalIdOrIqama } = parsed.data;
   const passwordHash = await hashPassword(password);
 
   try {
     // role is always "client" — self-serve registration never trusts a role
     // from the request body (only a super_admin can create admin accounts).
     const user = await prisma.user.create({
-      data: { name, email, phone, passwordHash, role: "client" },
-      select: { id: true, name: true, email: true, role: true, createdAt: true },
+      data: {
+        name,
+        email,
+        phone,
+        passwordHash,
+        role: "client",
+        nationality,
+        residencyStatus,
+        nationalIdOrIqama: nationalIdOrIqama ?? null,
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        role: true,
+        nationality: true,
+        residencyStatus: true,
+        createdAt: true,
+      },
     });
     return NextResponse.json({ user }, { status: 201 });
   } catch (err) {
